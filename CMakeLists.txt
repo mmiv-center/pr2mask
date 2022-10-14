@@ -26,7 +26,7 @@ ELSE()
   SET(CMAKE_CXX_FLAGS "-std=c++11 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")
 ENDIF()
 
-project(PR2NII)
+project(PR2MASK)
 
 FIND_PACKAGE(ITK)
 
@@ -48,5 +48,5 @@ endif()
 find_package(TBB REQUIRED)
 
 # target_link_libraries(your_target ${Boost_LIBRARIES})
-add_executable(pr2nii pr2nii.cxx)
-target_link_libraries(pr2nii ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
+add_executable(pr2mask pr2mask.cxx)
+target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
