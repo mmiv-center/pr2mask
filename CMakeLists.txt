@@ -5,10 +5,10 @@ if(COMMAND CMAKE_POLICY)
   cmake_policy(SET CMP0003 NEW)
 endif()
 
-if(EXISTS "/Users/hauke/src/itk/InsightToolkit-5.0.0/bin")
-  set(ITK_DIR /Users/hauke/src/itk/InsightToolkit-5.0.0/bin)
+if(EXISTS "/Users/hauke/src/itk/InsightToolkit-5.2.1/bin")
+  set(ITK_DIR /Users/hauke/src/itk/InsightToolkit-5.2.1/bin)
 else()
-  set(ITK_DIR /opt/InsightToolkit-5.0.1/bin)
+  set(ITK_DIR /opt/InsightToolkit-5.2.1/bin)
 endif()
 
 IF(UNIX AND NOT APPLE)
@@ -47,6 +47,11 @@ endif()
 
 find_package(TBB REQUIRED)
 
+if(TBB_FOUND)
+  MESSAGE(STATUS ">>> Found TBB")
+ENDIF()
+
 # target_link_libraries(your_target ${Boost_LIBRARIES})
 add_executable(pr2mask pr2mask.cxx)
 target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
+target_compile_features(pr2mask PRIVATE cxx_std_11)

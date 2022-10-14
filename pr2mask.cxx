@@ -237,9 +237,6 @@ int main(int argc, char *argv[]) {
       // seriesIdentifier = seriesName;
       runThese.push_back(seriesName);
     } else {
-      // Todo: here we select only the first series. We should run
-      // N3 on all series.
-
       seriesItr = seriesUID.begin();
       seriesEnd = seriesUID.end();
       // seriesIdentifier = seriesUID.begin()->c_str();
@@ -247,12 +244,10 @@ int main(int argc, char *argv[]) {
         runThese.push_back(seriesItr->c_str());
         ++seriesItr;
       }
-      // Todo: if we have multiple phases they will all be in the same series.
-      // It does not make sense to handle them here as one big volume, we should
-      // look for the slice locations (consecutive) identify the first volume
-      // and run N3 on that one. The resulting bias field should be applied to
-      // all phases of the series.
     }
+
+    // we need to identify for each series if they are a presentation state object and if we can extract some
+    // contours from them
 
     seriesItr = runThese.begin();
     seriesEnd = runThese.end();
