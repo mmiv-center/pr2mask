@@ -246,8 +246,16 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    // we need to identify for each series if they are a presentation state object and if we can extract some
-    // contours from them
+    // We need to identify for each series if they are a presentation state object and if we can extract some
+    // contours from them.
+    struct Polygon {
+      std::vector<float> coords;            // the vector of pixel coordinates extracted from presentation state
+      std::string ReferencedSOPInstanceUID; // the referenced SOP instance UID (identifies the image)
+      std::string ReferenceSeriesInstanceUID;
+      std::string FileName; // the name of the DICOM file
+    };
+
+    std::vector<Polygon> storage;
 
     seriesItr = runThese.begin();
     seriesEnd = runThese.end();
@@ -258,11 +266,60 @@ int main(int argc, char *argv[]) {
       std::cout << "Processing series: " << std::endl;
       std::cout << "  " << seriesIdentifier << std::endl;
 
-      std::string outputSeries = output + "/" + seriesIdentifier;
-      if (!force && itksys::SystemTools::FileIsDirectory(outputSeries.c_str())) {
-        fprintf(stdout, "Skip this series %s, output directory exists already...\n", outputSeries.c_str());
-        exit(0); // this is no skip, that is giving up...
+      typedef std::vector<std::string> FileNamesContainer;
+      FileNamesContainer fileNames;
+
+      fileNames = nameGenerator->GetFileNames(seriesIdentifier);
+
+      reader->SetFileNames(fileNames);
+      reader->ForceOrthogonalDirectionOff(); // do we need this?
+
+      try {
+        reader->Update();
+      } catch (itk::ExceptionObject &ex) {
+        std::cout << ex << std::endl;
+        return EXIT_FAILURE;
       }
+
+      // read the data dictionary
+      ImageType::Pointer inputImage = reader->GetOutput();
+      typedef itk::MetaDataDictionary DictionaryType;
+      DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
+      fprintf(stdout, "pixel spacing of input is: %f %f %f\n", inputImage->GetSpacing()[0], inputImage->GetSpacing()[1], inputImage->GetSpacing()[2]);
+
+      // do we have a presentation state object?
+      std::string modality;
+      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0060", modality)) {
+        if (boost::algorithm::trim_copy(modality) == "PR") {
+          std::cout << "Found a presentation state object" << std::endl;
+        } else {
+          std::cout << "Ignore this image series, modality is " << modality << " instead of PR." << std::endl;
+          continue; // switch to the next series
+        }
+      }
+      Polygon poly;
+
+      std::string seriesInstanceUID;
+      if (itk::ExposeMetaData<std::string>(dictionary, "0020|000E", seriesInstanceUID)) {
+        poly.ReferenceSeriesInstanceUID = boost::algorithm::trim_copy(seriesInstanceUID);
+      }
+      storage.push_back(poly);
+    }
+
+    seriesItr = runThese.begin();
+    seriesEnd = runThese.end();
+    while (seriesItr != seriesEnd) {
+      seriesIdentifier = seriesItr->c_str();
+      ++seriesItr;
+
+      std::cout << "Processing series: " << std::endl;
+      std::cout << "  " << seriesIdentifier << std::endl;
+
+      // std::string outputSeries = output + "/" + seriesIdentifier;
+      // if (!force && itksys::SystemTools::FileIsDirectory(outputSeries.c_str())) {
+      //   fprintf(stdout, "Skip this series %s, output directory exists already...\n", outputSeries.c_str());
+      //   exit(0); // this is no skip, that is giving up...
+      // }
 
       typedef std::vector<std::string> FileNamesContainer;
       FileNamesContainer fileNames;
