@@ -46,6 +46,7 @@
 #include "gdcmImageReader.h"
 #include "gdcmImageWriter.h"
 #include "gdcmMediaStorage.h"
+#include "gdcmReader.h"
 #include "gdcmRescaler.h"
 #include "gdcmStringFilter.h"
 #include "gdcmUIDGenerator.h"
@@ -136,6 +137,68 @@ template <typename TValue> std::vector<TValue> ConvertVector(std::string optionS
 
 json resultJSON;
 
+// We need to identify for each series if they are a presentation state object and if we can extract some
+// contours from them.
+struct Polygon {
+  std::vector<float> coords;            // the vector of pixel coordinates extracted from presentation state
+  std::string ReferencedSOPInstanceUID; // the referenced SOP instance UID (identifies the image)
+  std::string ReferenceSeriesInstanceUID;
+  std::string FileName; // the name of the DICOM file
+};
+
+bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
+  // read from input and create polygon structs in storage
+  Polygon poly;
+
+  for (boost::filesystem::recursive_directory_iterator end, dir(input); dir != end; ++dir) {
+    // std::cout << *dir << "\n";  // full path
+    std::cout << dir->path().filename() << "\n"; // just last bit
+    std::string filename = dir->path().string();
+
+    // Instanciate the reader:
+    gdcm::Reader reader;
+    reader.SetFileName(filename.c_str());
+    if (!reader.Read()) {
+      std::cerr << "Could not read: " << filename << std::endl;
+      continue;
+    }
+
+    // The output of gdcm::Reader is a gdcm::File
+    gdcm::File &file = reader.GetFile();
+
+    // the dataset is the the set of element we are interested in:
+    gdcm::DataSet &ds = file.GetDataSet();
+
+    // is this Modality PR?
+    std::string SeriesInstanceUID;
+    std::string Modality;
+
+    gdcm::Attribute<0x0008, 0x0060> modalityAttr;
+    modalityAttr.Set(ds);
+    if (modalityAttr.GetValue() == std::string("PR")) {
+      fprintf(stdout, "Found a PR file\n");
+    } else {
+      continue;
+    }
+
+    const gdcm::DataElement &de = ds.GetDataElement(gdcm::Tag(0x0070, 0x0001));
+    // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
+    gdcm::SmartPointer<gdcm::SequenceOfItems> sqi = de.GetValueAsSQ();
+    if (sqi) {
+      gdcm::SequenceOfItems::SizeType nitems = sqi->GetNumberOfItems();
+      fprintf(stdout, "found %lu items\n", nitems);
+      for (int itemNr = 0; itemNr < nitems; itemNr++) {
+        gdcm::Item &item = sqi->GetItem(itemNr);
+        gdcm::DataSet &subds = item.GetNestedDataSet();
+      }
+
+    } else {
+      fprintf(stdout, "not sequence?\n");
+    }
+  }
+  return true;
+}
+
 int main(int argc, char *argv[]) {
   boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
   resultJSON["run_date_time"] = to_simple_string(timeLocal);
@@ -183,24 +246,17 @@ int main(int argc, char *argv[]) {
     resultJSON["command_line"].push_back(std::string(argv[i]));
   }
 
-  //  typedef signed short PixelType;
-  typedef float FloatPixelType;
-  const unsigned int Dimension = 3;
-
-  //  typedef itk::Image<PixelType, Dimension> ImageType;
-  typedef itk::Image<FloatPixelType, Dimension> FloatImageType;
+  // to read the PR images we need another ReaderType, they are not images
+  // lets call a function that will give us back the polygon information we need to process
+  // the image data
+  std::vector<Polygon> storage;
+  parseForPolygons(input, &storage);
 
   typedef itk::ImageSeriesReader<ImageType> ReaderType;
   ReaderType::Pointer reader = ReaderType::New();
 
-  typedef itk::Image<unsigned char, Dimension> MaskImageType;
+  typedef itk::Image<unsigned char, 3> MaskImageType;
   typedef itk::Image<unsigned char, 2> MaskSliceImageType;
-
-  using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, Dimension>;
-  using ErodeFilterType = itk::BinaryErodeImageFilter<MaskImageType, MaskImageType, StructuringElementType>;
-  using DilateFilterType = itk::BinaryDilateImageFilter<MaskImageType, MaskImageType, StructuringElementType>;
-
-  typedef itk::ConnectedComponentImageFilter<MaskImageType, ImageType> ConnectedComponentImageFilterType;
 
   typedef itk::GDCMImageIO ImageIOType;
   ImageIOType::Pointer dicomIO = ImageIOType::New();
@@ -212,7 +268,7 @@ int main(int argc, char *argv[]) {
   NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
 
   nameGenerator->SetUseSeriesDetails(true);
-  nameGenerator->AddSeriesRestriction("0008|0021");
+  nameGenerator->AddSeriesRestriction("0008|0060");
   nameGenerator->SetRecursive(true);
   nameGenerator->SetDirectory(input);
 
@@ -244,66 +300,6 @@ int main(int argc, char *argv[]) {
         runThese.push_back(seriesItr->c_str());
         ++seriesItr;
       }
-    }
-
-    // We need to identify for each series if they are a presentation state object and if we can extract some
-    // contours from them.
-    struct Polygon {
-      std::vector<float> coords;            // the vector of pixel coordinates extracted from presentation state
-      std::string ReferencedSOPInstanceUID; // the referenced SOP instance UID (identifies the image)
-      std::string ReferenceSeriesInstanceUID;
-      std::string FileName; // the name of the DICOM file
-    };
-
-    std::vector<Polygon> storage;
-
-    seriesItr = runThese.begin();
-    seriesEnd = runThese.end();
-    while (seriesItr != seriesEnd) {
-      seriesIdentifier = seriesItr->c_str();
-      ++seriesItr;
-
-      std::cout << "Processing series: " << std::endl;
-      std::cout << "  " << seriesIdentifier << std::endl;
-
-      typedef std::vector<std::string> FileNamesContainer;
-      FileNamesContainer fileNames;
-
-      fileNames = nameGenerator->GetFileNames(seriesIdentifier);
-
-      reader->SetFileNames(fileNames);
-      reader->ForceOrthogonalDirectionOff(); // do we need this?
-
-      try {
-        reader->Update();
-      } catch (itk::ExceptionObject &ex) {
-        std::cout << ex << std::endl;
-        return EXIT_FAILURE;
-      }
-
-      // read the data dictionary
-      ImageType::Pointer inputImage = reader->GetOutput();
-      typedef itk::MetaDataDictionary DictionaryType;
-      DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
-      fprintf(stdout, "pixel spacing of input is: %f %f %f\n", inputImage->GetSpacing()[0], inputImage->GetSpacing()[1], inputImage->GetSpacing()[2]);
-
-      // do we have a presentation state object?
-      std::string modality;
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0060", modality)) {
-        if (boost::algorithm::trim_copy(modality) == "PR") {
-          std::cout << "Found a presentation state object" << std::endl;
-        } else {
-          std::cout << "Ignore this image series, modality is " << modality << " instead of PR." << std::endl;
-          continue; // switch to the next series
-        }
-      }
-      Polygon poly;
-
-      std::string seriesInstanceUID;
-      if (itk::ExposeMetaData<std::string>(dictionary, "0020|000E", seriesInstanceUID)) {
-        poly.ReferenceSeriesInstanceUID = boost::algorithm::trim_copy(seriesInstanceUID);
-      }
-      storage.push_back(poly);
     }
 
     seriesItr = runThese.begin();
