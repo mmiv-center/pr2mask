@@ -143,14 +143,15 @@ json resultJSON;
 struct Polygon {
   std::vector<float> coords;            // the vector of pixel coordinates extracted from presentation state
   std::string ReferencedSOPInstanceUID; // the referenced SOP instance UID (identifies the image)
-  std::string ReferenceSeriesInstanceUID;
+  std::string ReferencedSeriesInstanceUID;
   std::string StudyInstanceUID;
   std::string SeriesInstanceUID;
   std::string Filename; // the name of the DICOM file
 };
 
-bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
+bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map<std::string, std::string> *SOPInstanceUID2SeriesInstanceUID) {
   // read from input and create polygon structs in storage
+  // a local cache of the Series that might be referenced
 
   for (boost::filesystem::recursive_directory_iterator end, dir(input); dir != end; ++dir) {
     // std::cout << *dir << "\n";  // full path
@@ -161,7 +162,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
     gdcm::Reader reader;
     reader.SetFileName(filename.c_str());
     if (!reader.Read()) {
-      std::cerr << "Could not read: " << filename << std::endl;
+      std::cerr << "Could not read  \"" << filename << "\" as DICOM, ignore." << std::endl;
       continue;
     }
 
@@ -174,6 +175,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
     // is this Modality PR?
     std::string SeriesInstanceUID;
     std::string StudyInstanceUID;
+    std::string SOPInstanceUID;
     std::string Modality;
 
     const gdcm::Tag graphicType(0x0070, 0x0023);              // GraphicType
@@ -185,7 +187,22 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
 
     gdcm::Attribute<0x0008, 0x0060> modalityAttr;
     modalityAttr.Set(ds);
-    if (modalityAttr.GetValue() != std::string("PR")) {
+    if (modalityAttr.GetValue() != std::string("PR")) { // PR's might reference these
+      // we should create a cache here for the SeriesInstanceUID the ReferencedSOPInstanceUID might point to
+      gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
+      seriesinstanceuidAttr.Set(ds);
+      SeriesInstanceUID = seriesinstanceuidAttr.GetValue();
+      if (SeriesInstanceUID.back() == '\0')
+        SeriesInstanceUID.replace(SeriesInstanceUID.end() - 1, SeriesInstanceUID.end(), "");
+
+      gdcm::Attribute<0x0008, 0x0018> sopInstanceUIDAttr;
+      sopInstanceUIDAttr.Set(ds);
+      SOPInstanceUID = sopInstanceUIDAttr.GetValue();
+      if (SOPInstanceUID.back() == '\0')
+        SOPInstanceUID.replace(SOPInstanceUID.end() - 1, SOPInstanceUID.end(), "");
+
+      // fprintf(stdout, " add to cache %s -> %s\n", SOPInstanceUID.c_str(), SeriesInstanceUID.c_str());
+      SOPInstanceUID2SeriesInstanceUID->insert(std::pair<std::string, std::string>(SOPInstanceUID, SeriesInstanceUID));
       continue;
     }
 
@@ -324,25 +341,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
           for (unsigned int i = 0; i < elwc.GetLength(); ++i) {
             poly.coords[i] = elwc.GetValue(i);
           }
-
-          // fprintf(stdout, "length: %d \n", (unsigned int)bv3->GetLength());
-          //  gdcm::VR vr = gdcm::VR::FL;
-          //  unsigned int vrsize = vr.GetSizeof();
-          //  unsigned int count = gdcm::VM::GetNumberOfElementsFromArray(gD.c_str(), (unsigned int)gD.size());
-          // fprintf(stdout, " %lu elements in array\n", poly.coords.size());
-
           // now store the poly
           storage->push_back(poly);
-
-          /* typedef boost::tokenizer<boost::char_separator<char>> tokenizer;
-          boost::char_separator<char> sep("\\");
-          tokenizer tok(gD, sep);
-          for (tokenizer::iterator beg = tok.begin(); beg != tok.end(); ++beg) {
-            std::cout << *beg << std::endl;
-          }
-          */
-
-          //   fprintf(stdout, " graphic Type: \"%s\" number of points: %d, data: \"%s\"\n", gT.c_str(), numberOfPoints, gD.c_str());
         }
       }
 
@@ -350,6 +350,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage) {
       fprintf(stdout, "not sequence?\n");
     }
   }
+
   return true;
 }
 
@@ -404,7 +405,42 @@ int main(int argc, char *argv[]) {
   // lets call a function that will give us back the polygon information we need to process
   // the image data
   std::vector<Polygon> storage;
-  parseForPolygons(input, &storage);
+  std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
+  parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID);
+
+  auto first_element = SOPInstanceUID2SeriesInstanceUID.begin();
+  auto pos = SOPInstanceUID2SeriesInstanceUID.find(first_element->first);
+  // we would like to add to storage the ReferencedSeriesInstanceUID's, (we only get the ReferencedSOPInstanceUID above)
+  int goodStorage = 0;
+  for (int i = 0; i < storage.size(); i++) {
+    bool found = false;
+    for (auto pos = SOPInstanceUID2SeriesInstanceUID.begin(); pos != SOPInstanceUID2SeriesInstanceUID.end(); pos++) {
+      if (pos->first == storage[i].ReferencedSOPInstanceUID) {
+        storage[i].ReferencedSeriesInstanceUID = pos->second;
+        found = true;
+        goodStorage++;
+        break;
+      }
+    }
+    if (!found) {
+      fprintf(stderr, "Error: We have never seen an MR image with the SOPInstanceUID: \"%s\". It is referenced in \"%s\"\n",
+              storage[i].ReferencedSOPInstanceUID.c_str(), storage[i].Filename.c_str());
+    }
+  }
+  fprintf(stdout, "We could identify the referenced series in %d referenced polylines.\n", goodStorage);
+
+  // loop over storage and append to resultJSON
+  resultJSON["POLYLINES"] = json::array();
+  for (int i = 0; i < storage.size(); i++) {
+    auto entry = json::object();
+    entry["ReferencedSOPInstanceUID"] = storage[i].ReferencedSOPInstanceUID;
+    entry["Coordinates"] = storage[i].coords;
+    entry["Filename"] = storage[i].Filename;
+    entry["StudyInstanceUID"] = storage[i].StudyInstanceUID;
+    entry["SeriesInstanceUID"] = storage[i].SeriesInstanceUID;
+    entry["ReferencedSeriesInstanceUID"] = storage[i].ReferencedSeriesInstanceUID;
+    resultJSON["POLYLINES"].push_back(entry);
+  }
 
   typedef itk::ImageSeriesReader<ImageType> ReaderType;
   ReaderType::Pointer reader = ReaderType::New();
@@ -421,7 +457,7 @@ int main(int argc, char *argv[]) {
   typedef itk::GDCMSeriesFileNames NamesGeneratorType;
   NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
 
-  nameGenerator->SetUseSeriesDetails(true);
+  nameGenerator->SetUseSeriesDetails(false); // we want to use the keys as SeriesInstanceUIDs
   nameGenerator->AddSeriesRestriction("0008|0060");
   nameGenerator->SetRecursive(true);
   nameGenerator->SetDirectory(input);
@@ -461,6 +497,14 @@ int main(int argc, char *argv[]) {
     while (seriesItr != seriesEnd) {
       seriesIdentifier = seriesItr->c_str();
       ++seriesItr;
+      // do we have this seriesIdentifier in storage? What polygons are part of that?
+      bool doSomething = false;
+      for (int i = 0; i < storage.size(); i++) {
+        if (storage[i].ReferencedSeriesInstanceUID == seriesIdentifier)
+          doSomething = true;
+      }
+      if (!doSomething)
+        continue;
 
       std::cout << "Processing series: " << std::endl;
       std::cout << "  " << seriesIdentifier << std::endl;
@@ -475,82 +519,94 @@ int main(int argc, char *argv[]) {
       FileNamesContainer fileNames;
 
       fileNames = nameGenerator->GetFileNames(seriesIdentifier);
+      // we should check now if any of these files SOPInstanceUID appears in our array of polylines (storage)
+      // read the images one by one
+      if (1) {
+        // loop over all files in this series
+        for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
+          std::vector<std::string> oneFile;
+          oneFile.push_back(fileNames[sliceNr]);
+          reader->SetFileNames(oneFile);
+          try {
+            reader->Update();
+          } catch (itk::ExceptionObject &ex) {
+            std::cout << ex << std::endl;
+            return EXIT_FAILURE;
+          }
+          ImageType::Pointer inputImage = reader->GetOutput();
+          typedef itk::MetaDataDictionary DictionaryType;
+          DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
 
-      if (fileNames.size() < 2) {
-        std::cout << "skip processing, not enough images in this series..." << std::endl;
-        continue;
-      }
-      fprintf(stdout, "sufficient number of images (%lu) in this series\n", fileNames.size());
-      resultJSON["series_identifier"] = seriesIdentifier;
-
-      reader->SetFileNames(fileNames);
-      reader->ForceOrthogonalDirectionOff(); // do we need this?
-
-      try {
-        reader->Update();
-      } catch (itk::ExceptionObject &ex) {
-        std::cout << ex << std::endl;
-        return EXIT_FAILURE;
-      }
-
-      // read the data dictionary
-      ImageType::Pointer inputImage = reader->GetOutput();
-      typedef itk::MetaDataDictionary DictionaryType;
-      DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
-      fprintf(stdout, "pixel spacing of input is: %f %f %f\n", inputImage->GetSpacing()[0], inputImage->GetSpacing()[1], inputImage->GetSpacing()[2]);
-
-      std::string studyDescription;
-      std::string seriesDescription;
-      std::string patientID;
-      std::string patientName;
-      std::string sopClassUID;
-      std::string seriesDate;
-      std::string seriesTime;
-      std::string studyDate;
-      std::string studyTime;
-      std::string patientSex;
-      std::string convolutionKernelGroup;
-      std::string modality;
-      std::string manufacturer;
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|1030", studyDescription))
-        resultJSON["SeriesDescription"] = boost::algorithm::trim_copy(seriesDescription);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription))
-        resultJSON["StudyDescription"] = boost::algorithm::trim_copy(studyDescription);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0016", sopClassUID))
-        resultJSON["SOPClassUID"] = boost::algorithm::trim_copy(sopClassUID);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0021", seriesDate))
-        resultJSON["StudyDate"] = boost::algorithm::trim_copy(studyDate);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0031", seriesTime))
-        resultJSON["SeriesTime"] = boost::algorithm::trim_copy(seriesTime);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0010|0020", patientID))
-        resultJSON["PatientID"] = boost::algorithm::trim_copy(patientID);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0010|0010", patientName))
-        resultJSON["PatientName"] = boost::algorithm::trim_copy(patientName);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0010|0040", patientSex))
-        resultJSON["PatientSex"] = boost::algorithm::trim_copy(patientSex);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0030", studyTime))
-        resultJSON["StudyTime"] = boost::algorithm::trim_copy(studyTime);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0020", studyDate))
-        resultJSON["SeriesDate"] = boost::algorithm::trim_copy(seriesDate);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0018|9316", convolutionKernelGroup))
-        resultJSON["CTConvolutionKernelGroup"] = boost::algorithm::trim_copy(convolutionKernelGroup); // LUNG, BRAIN, BONE, SOFT_TISSUE
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0060", modality))
-        resultJSON["Modality"] = boost::algorithm::trim_copy(modality);
-      if (itk::ExposeMetaData<std::string>(dictionary, "0008|0080", manufacturer))
-        resultJSON["Manufacturer"] = boost::algorithm::trim_copy(manufacturer);
-
-      // loop over storage and append to resultJSON
-      resultJSON["POLYLINES"] = json::array();
-      for (int i = 0; i < storage.size(); i++) {
-        auto entry = json::object();
-        entry["ReferencedSOPInstanceUID"] = storage[i].ReferencedSOPInstanceUID;
-        entry["Coordinates"] = storage[i].coords;
-        entry["Filename"] = storage[i].Filename;
-        entry["StudyInstanceUID"] = storage[i].StudyInstanceUID;
-        entry["SeriesInstanceUID"] = storage[i].SeriesInstanceUID;
-        resultJSON["POLYLINES"].push_back(entry);
+          // example: ./Modules/Filtering/ImageIntensity/test/itkPolylineMask2DImageFilterTest.cxx
+        }
       }
 
+      // BELOW: we read the series as a volume - would make it possible to work with this as nii for example
+      // Here we should restrict ourselves to series that are mentioned in the ReferenedSeriesInstanceUIDs in storage
+      if (1) {
+        if (fileNames.size() < 2) {
+          std::cout << "skip processing, not enough images in this series..." << std::endl;
+          continue;
+        }
+        fprintf(stdout, "sufficient number of images (%lu) in this series\n", fileNames.size());
+        resultJSON["series_identifier"] = seriesIdentifier;
+
+        reader->SetFileNames(fileNames);
+        reader->ForceOrthogonalDirectionOff(); // do we need this?
+
+        try {
+          reader->Update();
+        } catch (itk::ExceptionObject &ex) {
+          std::cout << ex << std::endl;
+          return EXIT_FAILURE;
+        }
+
+        // read the data dictionary
+        ImageType::Pointer inputImage = reader->GetOutput();
+        typedef itk::MetaDataDictionary DictionaryType;
+        DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
+        fprintf(stdout, "pixel spacing of input is: %f %f %f\n", inputImage->GetSpacing()[0], inputImage->GetSpacing()[1], inputImage->GetSpacing()[2]);
+
+        std::string studyDescription;
+        std::string seriesDescription;
+        std::string patientID;
+        std::string patientName;
+        std::string sopClassUID;
+        std::string seriesDate;
+        std::string seriesTime;
+        std::string studyDate;
+        std::string studyTime;
+        std::string patientSex;
+        std::string convolutionKernelGroup;
+        std::string modality;
+        std::string manufacturer;
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|1030", studyDescription))
+          resultJSON["SeriesDescription"] = boost::algorithm::trim_copy(seriesDescription);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription))
+          resultJSON["StudyDescription"] = boost::algorithm::trim_copy(studyDescription);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0016", sopClassUID))
+          resultJSON["SOPClassUID"] = boost::algorithm::trim_copy(sopClassUID);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0021", seriesDate))
+          resultJSON["StudyDate"] = boost::algorithm::trim_copy(studyDate);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0031", seriesTime))
+          resultJSON["SeriesTime"] = boost::algorithm::trim_copy(seriesTime);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0010|0020", patientID))
+          resultJSON["PatientID"] = boost::algorithm::trim_copy(patientID);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0010|0010", patientName))
+          resultJSON["PatientName"] = boost::algorithm::trim_copy(patientName);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0010|0040", patientSex))
+          resultJSON["PatientSex"] = boost::algorithm::trim_copy(patientSex);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0030", studyTime))
+          resultJSON["StudyTime"] = boost::algorithm::trim_copy(studyTime);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0020", studyDate))
+          resultJSON["SeriesDate"] = boost::algorithm::trim_copy(seriesDate);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0018|9316", convolutionKernelGroup))
+          resultJSON["CTConvolutionKernelGroup"] = boost::algorithm::trim_copy(convolutionKernelGroup); // LUNG, BRAIN, BONE, SOFT_TISSUE
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0060", modality))
+          resultJSON["Modality"] = boost::algorithm::trim_copy(modality);
+        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0080", manufacturer))
+          resultJSON["Manufacturer"] = boost::algorithm::trim_copy(manufacturer);
+      }
     } // loop over series
   } catch (itk::ExceptionObject &ex) {
     std::cout << ex << std::endl;
