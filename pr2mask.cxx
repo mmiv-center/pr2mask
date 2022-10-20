@@ -423,11 +423,11 @@ int main(int argc, char *argv[]) {
       }
     }
     if (!found) {
-      fprintf(stderr, "Error: We have never seen an MR image with the SOPInstanceUID: \"%s\". It is referenced in \"%s\"\n",
-              storage[i].ReferencedSOPInstanceUID.c_str(), storage[i].Filename.c_str());
+      fprintf(stderr, "Error: Unknown MR (SOPInstanceUID): \"%s\" referenced in \"%s\"\n", storage[i].ReferencedSOPInstanceUID.c_str(),
+              storage[i].Filename.c_str());
     }
   }
-  fprintf(stdout, "We could identify the referenced series in %d referenced polylines.\n", goodStorage);
+  fprintf(stdout, "We could identify the referenced series for %d/%lu polylines.\n", goodStorage, storage.size());
 
   // loop over storage and append to resultJSON
   resultJSON["POLYLINES"] = json::array();
@@ -522,27 +522,119 @@ int main(int argc, char *argv[]) {
       // we should check now if any of these files SOPInstanceUID appears in our array of polylines (storage)
       // read the images one by one
       if (1) {
-        // loop over all files in this series
+        gdcm::UIDGenerator uid;
+        uid.SetRoot("1.3.6.1.4.1.45037");
+        const char *newSeriesInstanceUID = uid.Generate();
+        // fprintf(stdout, "NEW SERIESINSTANCEUID: \"%s\"\n", newSeriesInstanceUID);
+        //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
-          std::vector<std::string> oneFile;
-          oneFile.push_back(fileNames[sliceNr]);
-          reader->SetFileNames(oneFile);
+          typedef itk::ImageFileReader<ImageType> Reader2DType;
+          typedef itk::ImageFileWriter<ImageType> Writer2DType;
+          Reader2DType::Pointer r = Reader2DType::New();
+          Writer2DType::Pointer w = Writer2DType::New();
+          typedef itk::GDCMImageIO ImageIOType;
+          ImageIOType::Pointer dicomIO = ImageIOType::New();
+          dicomIO->LoadPrivateTagsOn();
+
+          r->SetImageIO(dicomIO);
+          r->SetFileName(fileNames[sliceNr]);
           try {
-            reader->Update();
-          } catch (itk::ExceptionObject &ex) {
-            std::cout << ex << std::endl;
+            r->Update();
+          } catch (itk::ExceptionObject &err) {
+            std::cerr << "ExceptionObject caught !" << std::endl;
+            std::cerr << err << std::endl;
             return EXIT_FAILURE;
           }
-          ImageType::Pointer inputImage = reader->GetOutput();
+          // now changed the slice we are importing
+          ImageType::Pointer im2change = r->GetOutput();
+
+          // InputImageType::Pointer inputImage = reader->GetOutput();
+          ImageType::RegionType region;
+          region = im2change->GetBufferedRegion();
+          ImageType::SizeType size = region.GetSize();
+          // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
+
+          ImageType::PixelContainer *container;
+          container = im2change->GetPixelContainer();
+          container->SetContainerManageMemory(false);
+          unsigned int bla = sizeof(ImageType::PixelType);
+          ImageType::PixelType *buffer2 = container->GetBufferPointer();
+
+          /*
+          ImageType::Pointer nImage = finalLabelField;
+          InputImageType::PixelContainer *container2;
+          container2 = nImage->GetPixelContainer();
+          InputImageType::PixelType *buffer3 = container2->GetBufferPointer();
+
+          // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
+          // that have been selected before (air in intestines for example).
+          memcpy(buffer2, &(buffer3[i * size[0] * size[1]]), size[0] * size[1] * bla);
+          // We can clean the data (remove all other label).
+          for (int k = 0; k < size[0] * size[1]; k++) {
+            if (buffer2[k] > 3) {
+              buffer2[k] = 0; // set to background
+            }
+          }
+          */
+
           typedef itk::MetaDataDictionary DictionaryType;
           DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
 
+          // the dataset is the the set of elements we are interested in:
+          // gdcm::File &file = r->GetFile();
+          // gdcm::DataSet &ds = r->GetDataSet();
+
+          std::string SeriesInstanceUID;
+          std::string SOPInstanceUID;
+          std::string seriesNumber;
+          itk::ExposeMetaData<std::string>(dictionary, "0020|000E", SeriesInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
+
+          // now change something to make a new copy of that file
+          int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 2;
+          gdcm::UIDGenerator uid;
+          uid.SetRoot("1.3.6.1.4.1.45037");
+          std::string newSOPInstanceUID(uid.Generate());
+
+          dicomIO->KeepOriginalUIDOn();
+          itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", std::string(newSeriesInstanceUID));
+
+          // set the new SeriesInstanceUID
+          // gdcm::Attribute<0x0020, 0x000E> ss;
+          // ss.SetValue(newSeriesInstanceUID);
+          // ds.Insert(ss.GetAsDataElement());
+
+          w->SetInput(im2change);
+          // create the output filename
+          boost::filesystem::path p(fileNames[sliceNr]);
+          boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+          w->SetFileName(p_out.c_str());
+          w->SetImageIO(dicomIO);
+
+          fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID);
+
+          if (!itksys::SystemTools::FileIsDirectory(output.c_str())) {
+            // create the output directory
+          }
+
+          try {
+            w->Update();
+          } catch (itk::ExceptionObject &err) {
+            std::cerr << "ExceptionObject caught !" << std::endl;
+            std::cerr << err << std::endl;
+            return EXIT_FAILURE;
+          }
           // example: ./Modules/Filtering/ImageIntensity/test/itkPolylineMask2DImageFilterTest.cxx
         }
       }
 
       // BELOW: we read the series as a volume - would make it possible to work with this as nii for example
       // Here we should restrict ourselves to series that are mentioned in the ReferenedSeriesInstanceUIDs in storage
+      // Actually we don't need this whole part , but we add the polylines into the json here so lets keep it for now.
       if (1) {
         if (fileNames.size() < 2) {
           std::cout << "skip processing, not enough images in this series..." << std::endl;
