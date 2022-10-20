@@ -33,6 +33,9 @@
 #include "itkScalarImageToHistogramGenerator.h"
 #include "itkWindowedSincInterpolateImageFunction.h"
 
+#include "itkPolyLineParametricPath.h"
+#include "itkPolylineMask2DImageFilter.h"
+
 #include "gdcmAnonymizer.h"
 #include "gdcmAttribute.h"
 #include "gdcmDataSetHelper.h"
@@ -509,12 +512,6 @@ int main(int argc, char *argv[]) {
       std::cout << "Processing series: " << std::endl;
       std::cout << "  " << seriesIdentifier << std::endl;
 
-      // std::string outputSeries = output + "/" + seriesIdentifier;
-      // if (!force && itksys::SystemTools::FileIsDirectory(outputSeries.c_str())) {
-      //   fprintf(stdout, "Skip this series %s, output directory exists already...\n", outputSeries.c_str());
-      //   exit(0); // this is no skip, that is giving up...
-      // }
-
       typedef std::vector<std::string> FileNamesContainer;
       FileNamesContainer fileNames;
 
@@ -528,8 +525,9 @@ int main(int argc, char *argv[]) {
         // fprintf(stdout, "NEW SERIESINSTANCEUID: \"%s\"\n", newSeriesInstanceUID);
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
-          typedef itk::ImageFileReader<ImageType> Reader2DType;
-          typedef itk::ImageFileWriter<ImageType> Writer2DType;
+          using ImageType2D = itk::Image<PixelType, 2>;
+          typedef itk::ImageFileReader<ImageType2D> Reader2DType;
+          typedef itk::ImageFileWriter<ImageType2D> Writer2DType;
           Reader2DType::Pointer r = Reader2DType::New();
           Writer2DType::Pointer w = Writer2DType::New();
           typedef itk::GDCMImageIO ImageIOType;
@@ -546,36 +544,65 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
           }
           // now changed the slice we are importing
-          ImageType::Pointer im2change = r->GetOutput();
+          ImageType2D::Pointer im2change = r->GetOutput();
+
+          // COPY THE NEW IMAGE from polygon data
+          using InputPolylineType = itk::PolyLineParametricPath<2>;
+          InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
+          using VertexType = InputPolylineType::VertexType;
+
+          using VertexType = InputPolylineType::VertexType;
+
+          // Add vertices to the polyline
+          VertexType v0;
+          v0[0] = 6.0;
+          v0[1] = 1.0;
+          // v0[2] = 0;
+          inputPolyline->AddVertex(v0);
+
+          using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
+          InputFilterType::Pointer filter = InputFilterType::New();
+
+          // Connect the input image
+          filter->SetInput1(im2change);
+
+          // Connect the Polyline
+          filter->SetInput2(inputPolyline);
+          try {
+            filter->Update();
+          } catch (itk::ExceptionObject &err) {
+            std::cerr << "ExceptionObject caught !" << std::endl;
+            std::cerr << err << std::endl;
+            return EXIT_FAILURE;
+          }
+          // ImageType2D::Pointer nImage = filter->GetOutput();
 
           // InputImageType::Pointer inputImage = reader->GetOutput();
-          ImageType::RegionType region;
+          ImageType2D::RegionType region;
           region = im2change->GetBufferedRegion();
-          ImageType::SizeType size = region.GetSize();
+          ImageType2D::SizeType size = region.GetSize();
           // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
 
-          ImageType::PixelContainer *container;
+          ImageType2D::PixelContainer *container;
           container = im2change->GetPixelContainer();
           container->SetContainerManageMemory(false);
-          unsigned int bla = sizeof(ImageType::PixelType);
-          ImageType::PixelType *buffer2 = container->GetBufferPointer();
+          unsigned int bla = sizeof(ImageType2D::PixelType);
+          ImageType2D::PixelType *buffer2 = container->GetBufferPointer();
 
-          /*
-          ImageType::Pointer nImage = finalLabelField;
-          InputImageType::PixelContainer *container2;
+          ImageType2D::Pointer nImage = filter->GetOutput();
+          ImageType2D::PixelContainer *container2;
           container2 = nImage->GetPixelContainer();
-          InputImageType::PixelType *buffer3 = container2->GetBufferPointer();
+          ImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
 
           // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
           // that have been selected before (air in intestines for example).
-          memcpy(buffer2, &(buffer3[i * size[0] * size[1]]), size[0] * size[1] * bla);
+          memcpy(buffer2, &(buffer3[1 * size[0] * size[1]]), size[0] * size[1] * bla);
           // We can clean the data (remove all other label).
           for (int k = 0; k < size[0] * size[1]; k++) {
             if (buffer2[k] > 3) {
               buffer2[k] = 0; // set to background
             }
           }
-          */
 
           typedef itk::MetaDataDictionary DictionaryType;
           DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
