@@ -65,6 +65,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
 #include <boost/filesystem.hpp>
+#include <cstdio>
 #include <map>
 
 #include "mytypes.h"
@@ -556,7 +557,7 @@ int main(int argc, char *argv[]) {
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
             boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "images" + boost::filesystem::path::preferred_separator +
-                                            newSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                            seriesIdentifier + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
             if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
               // create the output directory
               create_directories(p_out.parent_path());
@@ -673,6 +674,42 @@ int main(int argc, char *argv[]) {
             }*/
           }
 
+          // dilate and erode the im2change (mask)
+          using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
+          using ErodeFilterType = itk::BinaryErodeImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
+          using DilateFilterType = itk::BinaryDilateImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
+          DilateFilterType::Pointer binaryDilate = DilateFilterType::New();
+          ErodeFilterType::Pointer binaryErode = ErodeFilterType::New();
+
+          StructuringElementType structuringElement;
+          structuringElement.SetRadius(1); // 3x3 structuring element
+          structuringElement.CreateStructuringElement();
+          binaryDilate->SetKernel(structuringElement);
+          binaryErode->SetKernel(structuringElement);
+          binaryErode->SetForegroundValue(1);
+          binaryErode->SetBackgroundValue(0);
+          binaryDilate->SetForegroundValue(1);
+          binaryDilate->SetBackgroundValue(0);
+          binaryDilate->SetInput(im2change);
+          binaryErode->SetInput(binaryDilate->GetOutput());
+          binaryDilate->SetDilateValue(1);
+          binaryErode->SetErodeValue(1);
+
+          try {
+            binaryErode->Update();
+          } catch (itk::ExceptionObject &err) {
+            std::cerr << "ExceptionObject caught !" << std::endl;
+            std::cerr << err << std::endl;
+            return EXIT_FAILURE;
+          }
+
+          // copy the values back to the im2change buffer
+          ImageType2D::Pointer cleanMask = binaryErode->GetOutput();
+          ImageType2D::PixelContainer *container3;
+          container3 = cleanMask->GetPixelContainer();
+          ImageType2D::PixelType *buffer4 = container3->GetBufferPointer();
+          memcpy(buffer2, &(buffer4[0]), size[0] * size[1] * bla);
+
           // now change something to make a new copy of that file
           int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 2;
           gdcm::UIDGenerator uid;
@@ -692,7 +729,6 @@ int main(int argc, char *argv[]) {
           boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "labels" + boost::filesystem::path::preferred_separator +
                                           newSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
           if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
-            // create the output directory
             create_directories(p_out.parent_path());
           }
           w->SetFileName(p_out.c_str());
@@ -709,75 +745,21 @@ int main(int argc, char *argv[]) {
           }
           // example: ./Modules/Filtering/ImageIntensity/test/itkPolylineMask2DImageFilterTest.cxx
         }
+        // we should remember this mapping in a csv file
+        boost::filesystem::path csv_out = output + boost::filesystem::path::preferred_separator + "data.csv";
+        if (!itksys::SystemTools::FileIsDirectory(csv_out.parent_path().c_str())) {
+          create_directories(csv_out.parent_path());
+        }
+        if (!boost::filesystem::exists(csv_out)) {
+          FILE *fp = fopen(csv_out.c_str(), "a");
+          fprintf(fp, "ImageSeriesInstanceUID,LabelSeriesInstanceUID\n");
+          fclose(fp);
+        }
+        FILE *fp = fopen(csv_out.c_str(), "a");
+        fprintf(fp, "\"images/%s\",\"labels/%s\"\n", seriesIdentifier.c_str(), newSeriesInstanceUID);
+        fclose(fp);
       }
 
-      // BELOW: we read the series as a volume - would make it possible to work with this as nii for example
-      // Here we should restrict ourselves to series that are mentioned in the ReferenedSeriesInstanceUIDs in storage
-      // Actually we don't need this whole part , but we add the polylines into the json here so lets keep it for now.
-      if (1) {
-        if (fileNames.size() < 2) {
-          std::cout << "skip processing, not enough images in this series..." << std::endl;
-          continue;
-        }
-        fprintf(stdout, "sufficient number of images (%lu) in this series\n", fileNames.size());
-        resultJSON["series_identifier"] = seriesIdentifier;
-
-        reader->SetFileNames(fileNames);
-        reader->ForceOrthogonalDirectionOff(); // do we need this?
-
-        try {
-          reader->Update();
-        } catch (itk::ExceptionObject &ex) {
-          std::cout << ex << std::endl;
-          return EXIT_FAILURE;
-        }
-
-        // read the data dictionary
-        ImageType::Pointer inputImage = reader->GetOutput();
-        typedef itk::MetaDataDictionary DictionaryType;
-        DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
-        fprintf(stdout, "pixel spacing of input is: %f %f %f\n", inputImage->GetSpacing()[0], inputImage->GetSpacing()[1], inputImage->GetSpacing()[2]);
-
-        std::string studyDescription;
-        std::string seriesDescription;
-        std::string patientID;
-        std::string patientName;
-        std::string sopClassUID;
-        std::string seriesDate;
-        std::string seriesTime;
-        std::string studyDate;
-        std::string studyTime;
-        std::string patientSex;
-        std::string convolutionKernelGroup;
-        std::string modality;
-        std::string manufacturer;
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|1030", studyDescription))
-          resultJSON["SeriesDescription"] = boost::algorithm::trim_copy(seriesDescription);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription))
-          resultJSON["StudyDescription"] = boost::algorithm::trim_copy(studyDescription);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0016", sopClassUID))
-          resultJSON["SOPClassUID"] = boost::algorithm::trim_copy(sopClassUID);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0021", seriesDate))
-          resultJSON["StudyDate"] = boost::algorithm::trim_copy(studyDate);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0031", seriesTime))
-          resultJSON["SeriesTime"] = boost::algorithm::trim_copy(seriesTime);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0010|0020", patientID))
-          resultJSON["PatientID"] = boost::algorithm::trim_copy(patientID);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0010|0010", patientName))
-          resultJSON["PatientName"] = boost::algorithm::trim_copy(patientName);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0010|0040", patientSex))
-          resultJSON["PatientSex"] = boost::algorithm::trim_copy(patientSex);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0030", studyTime))
-          resultJSON["StudyTime"] = boost::algorithm::trim_copy(studyTime);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0020", studyDate))
-          resultJSON["SeriesDate"] = boost::algorithm::trim_copy(seriesDate);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0018|9316", convolutionKernelGroup))
-          resultJSON["CTConvolutionKernelGroup"] = boost::algorithm::trim_copy(convolutionKernelGroup); // LUNG, BRAIN, BONE, SOFT_TISSUE
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0060", modality))
-          resultJSON["Modality"] = boost::algorithm::trim_copy(modality);
-        if (itk::ExposeMetaData<std::string>(dictionary, "0008|0080", manufacturer))
-          resultJSON["Manufacturer"] = boost::algorithm::trim_copy(manufacturer);
-      }
     } // loop over series
   } catch (itk::ExceptionObject &ex) {
     std::cout << ex << std::endl;
@@ -785,13 +767,14 @@ int main(int argc, char *argv[]) {
   }
 
   std::string res = resultJSON.dump(4) + "\n";
+  /*
   std::ostringstream o;
   std::string si(resultJSON["series_identifier"]);
   si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
   o << output << "/" << si << ".json";
   std::ofstream out(o.str());
   out << res;
-  out.close();
+  out.close(); */
 
   fprintf(stdout, "%s", res.c_str());
 
