@@ -534,7 +534,7 @@ int main(int argc, char *argv[]) {
           typedef itk::GDCMImageIO ImageIOType;
           ImageIOType::Pointer dicomIO = ImageIOType::New();
           dicomIO->LoadPrivateTagsOn();
-
+          dicomIO->KeepOriginalUIDOn();
           // we need to find out what for this image the ReferencedSOPInstanceUID is
           // only draw the contour on that image
 
@@ -549,6 +549,31 @@ int main(int argc, char *argv[]) {
           }
           // now changed the slice we are importing
           ImageType2D::Pointer im2change = r->GetOutput();
+
+          // make a copy of this image series in the output/images/ folder
+          if (1) {
+            w->SetInput(im2change);
+            // we should have a folder for each image series
+            boost::filesystem::path p(fileNames[sliceNr]);
+            boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "images" + boost::filesystem::path::preferred_separator +
+                                            newSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+            if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
+              // create the output directory
+              create_directories(p_out.parent_path());
+            }
+            w->SetFileName(p_out.c_str());
+            w->SetImageIO(dicomIO);
+
+            // fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID);
+
+            try {
+              w->Update();
+            } catch (itk::ExceptionObject &err) {
+              std::cerr << "ExceptionObject caught !" << std::endl;
+              std::cerr << err << std::endl;
+              return EXIT_FAILURE;
+            }
+          }
 
           // get some meta-data from the opened file (find out what polygons are relevant)
           typedef itk::MetaDataDictionary DictionaryType;
@@ -573,7 +598,11 @@ int main(int argc, char *argv[]) {
           using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
           InputFilterType::Pointer filter = InputFilterType::New();
           if (polyIds.size() > 0) {
-            int storageIdx = polyIds[0];
+            if (polyIds.size() != 1) {
+              fprintf(stderr, "Warning: there are more than one polygon for this image. We will ignore all but one.\n");
+            }
+
+            int storageIdx = polyIds[0]; // we just use the first one
 
             // COPY THE NEW IMAGE from polygon data
             using VertexType = InputPolylineType::VertexType;
@@ -660,8 +689,8 @@ int main(int argc, char *argv[]) {
           // create the output filename
           // we should have a folder for each image series
           boost::filesystem::path p(fileNames[sliceNr]);
-          boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + newSeriesInstanceUID +
-                                          boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+          boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "labels" + boost::filesystem::path::preferred_separator +
+                                          newSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
           if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
             // create the output directory
             create_directories(p_out.parent_path());
