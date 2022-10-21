@@ -658,16 +658,18 @@ int main(int argc, char *argv[]) {
 
           w->SetInput(im2change);
           // create the output filename
+          // we should have a folder for each image series
           boost::filesystem::path p(fileNames[sliceNr]);
-          boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+          boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + newSeriesInstanceUID +
+                                          boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+          if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
+            // create the output directory
+            create_directories(p_out.parent_path());
+          }
           w->SetFileName(p_out.c_str());
           w->SetImageIO(dicomIO);
 
           fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID);
-
-          if (!itksys::SystemTools::FileIsDirectory(output.c_str())) {
-            // create the output directory
-          }
 
           try {
             w->Update();
