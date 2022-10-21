@@ -502,9 +502,10 @@ int main(int argc, char *argv[]) {
       ++seriesItr;
       // do we have this seriesIdentifier in storage? What polygons are part of that?
       bool doSomething = false;
-      for (int i = 0; i < storage.size(); i++) {
-        if (storage[i].ReferencedSeriesInstanceUID == seriesIdentifier)
+      for (int i = 0; i < storage.size(); i++) { // not just the first key, we need all keys
+        if (storage[i].ReferencedSeriesInstanceUID == seriesIdentifier) {
           doSomething = true;
+        }
       }
       if (!doSomething)
         continue;
@@ -534,6 +535,9 @@ int main(int argc, char *argv[]) {
           ImageIOType::Pointer dicomIO = ImageIOType::New();
           dicomIO->LoadPrivateTagsOn();
 
+          // we need to find out what for this image the ReferencedSOPInstanceUID is
+          // only draw the contour on that image
+
           r->SetImageIO(dicomIO);
           r->SetFileName(fileNames[sliceNr]);
           try {
@@ -546,42 +550,73 @@ int main(int argc, char *argv[]) {
           // now changed the slice we are importing
           ImageType2D::Pointer im2change = r->GetOutput();
 
-          // COPY THE NEW IMAGE from polygon data
+          // get some meta-data from the opened file (find out what polygons are relevant)
+          typedef itk::MetaDataDictionary DictionaryType;
+          DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
+          std::string SeriesInstanceUID;
+          std::string SOPInstanceUID;
+          std::string seriesNumber;
+          itk::ExposeMetaData<std::string>(dictionary, "0020|000E", SeriesInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
+          // lookup the correct polygon, we need a loop over multiple polygons we also need
+          // outer and inner rings to represent holes. Not something we can get from PACS :-(
+          std::vector<int> polyIds;
+          for (int i = 0; i < storage.size(); i++) {
+            if (storage[i].ReferencedSOPInstanceUID == SOPInstanceUID) {
+              // for this slice we should treat this polygon
+              polyIds.push_back(i);
+            }
+          }
           using InputPolylineType = itk::PolyLineParametricPath<2>;
           InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
-          using VertexType = InputPolylineType::VertexType;
-
-          using VertexType = InputPolylineType::VertexType;
-
-          // Add vertices to the polyline
-          VertexType v0;
-          v0[0] = 6.0;
-          v0[1] = 1.0;
-          // v0[2] = 0;
-          inputPolyline->AddVertex(v0);
-
           using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
           InputFilterType::Pointer filter = InputFilterType::New();
+          if (polyIds.size() > 0) {
+            int storageIdx = polyIds[0];
 
-          // Connect the input image
-          filter->SetInput1(im2change);
+            // COPY THE NEW IMAGE from polygon data
+            using VertexType = InputPolylineType::VertexType;
 
-          // Connect the Polyline
-          filter->SetInput2(inputPolyline);
-          try {
-            filter->Update();
-          } catch (itk::ExceptionObject &err) {
-            std::cerr << "ExceptionObject caught !" << std::endl;
-            std::cerr << err << std::endl;
-            return EXIT_FAILURE;
+            // Add vertices to the polyline
+            double spacingx = im2change->GetSpacing()[0];
+            double spacingy = im2change->GetSpacing()[1];
+            double originx = im2change->GetOrigin()[0];
+            double originy = im2change->GetOrigin()[1];
+
+            for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
+              VertexType v0;
+              // coordinates are in pixel, we need coordinates based on the bounding box
+              v0[0] = originx + spacingx * storage[storageIdx].coords[j];
+              v0[1] = originy + spacingy * storage[storageIdx].coords[j + 1];
+              inputPolyline->AddVertex(v0);
+            }
+
+            // fill the input image with 1 (label)
+            im2change->FillBuffer(itk::NumericTraits<PixelType>::One);
+
+            // Connect the input image
+            filter->SetInput1(im2change);
+
+            // Connect the Polyline
+            filter->SetInput2(inputPolyline);
+            try {
+              filter->Update();
+            } catch (itk::ExceptionObject &err) {
+              std::cerr << "ExceptionObject caught !" << std::endl;
+              std::cerr << err << std::endl;
+              return EXIT_FAILURE;
+            }
+          } else { // without polygon just return an empty image
+            // fill the input image with 1 (label)
+            im2change->FillBuffer(itk::NumericTraits<PixelType>::Zero);
           }
-          // ImageType2D::Pointer nImage = filter->GetOutput();
 
           // InputImageType::Pointer inputImage = reader->GetOutput();
           ImageType2D::RegionType region;
           region = im2change->GetBufferedRegion();
           ImageType2D::SizeType size = region.GetSize();
-          // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
+          std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
 
           ImageType2D::PixelContainer *container;
           container = im2change->GetPixelContainer();
@@ -589,34 +624,25 @@ int main(int argc, char *argv[]) {
           unsigned int bla = sizeof(ImageType2D::PixelType);
           ImageType2D::PixelType *buffer2 = container->GetBufferPointer();
 
-          ImageType2D::Pointer nImage = filter->GetOutput();
-          ImageType2D::PixelContainer *container2;
-          container2 = nImage->GetPixelContainer();
-          ImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
+          ImageType2D::Pointer nImage;
+          if (polyIds.size() > 0) {
+            nImage = filter->GetOutput();
 
-          // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
-          // that have been selected before (air in intestines for example).
-          memcpy(buffer2, &(buffer3[1 * size[0] * size[1]]), size[0] * size[1] * bla);
-          // We can clean the data (remove all other label).
-          for (int k = 0; k < size[0] * size[1]; k++) {
-            if (buffer2[k] > 3) {
-              buffer2[k] = 0; // set to background
-            }
+            // ImageType2D::Pointer nImage = filter->GetOutput();
+            ImageType2D::PixelContainer *container2;
+            container2 = nImage->GetPixelContainer();
+            ImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
+
+            // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
+            // that have been selected before (air in intestines for example).
+            memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
+            // We can clean the data (remove all other label).
+            /*for (int k = 0; k < size[0] * size[1]; k++) {
+              if (buffer2[k] > 3) {
+                buffer2[k] = 0; // set to background
+              }
+            }*/
           }
-
-          typedef itk::MetaDataDictionary DictionaryType;
-          DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
-
-          // the dataset is the the set of elements we are interested in:
-          // gdcm::File &file = r->GetFile();
-          // gdcm::DataSet &ds = r->GetDataSet();
-
-          std::string SeriesInstanceUID;
-          std::string SOPInstanceUID;
-          std::string seriesNumber;
-          itk::ExposeMetaData<std::string>(dictionary, "0020|000E", SeriesInstanceUID);
-          itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
-          itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
 
           // now change something to make a new copy of that file
           int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 2;
@@ -629,11 +655,6 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", std::string(newSeriesInstanceUID));
-
-          // set the new SeriesInstanceUID
-          // gdcm::Attribute<0x0020, 0x000E> ss;
-          // ss.SetValue(newSeriesInstanceUID);
-          // ds.Insert(ss.GetAsDataElement());
 
           w->SetInput(im2change);
           // create the output filename
