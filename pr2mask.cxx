@@ -421,16 +421,17 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetDescription("PR2NII: Convert presentation state files with polygons to nii.");
+  command.SetVersion("0.0.1");
+  command.SetDate(to_simple_string(timeLocal).c_str());
+  command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
   command.AddField("outdir", "Directory for images/ and labels/ folder as DICOM.", MetaCommand::STRING, true);
 
   command.SetOption("SeriesName", "n", false, "Select series by series name (if more than one series is present).");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
 
-  command.SetOption("Force", "f", false, "Ignore existing directories and force reprocessing. Default is to stop processing if directory already exists.");
-
-  command.SetOption("Verbose", "V", false, "Print more verbose output");
+  command.SetOption("Verbose", "v", false, "Print more verbose output");
+  command.SetOptionLongTag("Verbose", "verbose");
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -440,17 +441,16 @@ int main(int argc, char *argv[]) {
   std::string input = command.GetValueAsString("indir");
   std::string output = command.GetValueAsString("outdir");
 
+  if (input.size() == 0 || output.size() == 0) {
+    return 1;
+  }
+
   bool verbose = false;
   if (command.GetOptionWasSet("Verbose"))
     verbose = true;
-  bool force = false;
-  if (command.GetOptionWasSet("Force"))
-    force = true;
 
   if (command.GetOptionWasSet("SeriesName"))
     seriesIdentifierFlag = true;
-  std::string labelfieldfilename = command.GetValueAsString("SaveLabelfield", "labelfieldfilename");
-  // todo: the argument could not be there, in this case the labelfieldfilename might be empty
 
   std::string seriesName = command.GetValueAsString("SeriesName", "seriesname");
 
