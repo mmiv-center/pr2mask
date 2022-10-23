@@ -358,7 +358,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           gdcm::Item &item2 = sqiGraphicObjectSequence->GetItem(itemNr2);
           gdcm::DataSet &subds2 = item2.GetNestedDataSet();
           if (!subds2.FindDataElement(graphicType)) {
-            // fprintf(stdout, " %d no graphic type\n", itemNr);
+            if (verbose)
+              fprintf(stdout, " %d no graphic type\n", itemNr);
             continue;
           }
           const gdcm::DataElement &deGraphicType = subds2.GetDataElement(graphicType);
@@ -377,7 +378,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           int numberOfPoints = *(nGP.c_str());
 
           if (!subds2.FindDataElement(graphicData)) {
-            // fprintf(stdout, " %d no graphic data\n", itemNr);
+            if (verbose)
+              fprintf(stdout, " %d no graphic data\n", itemNr);
             continue;
           }
           const gdcm::DataElement &deGraphicData = subds2.GetDataElement(graphicData);
@@ -410,6 +412,83 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
   return true;
 }
 
+using ImageType2D = itk::Image<PixelType, 2>;
+
+ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::vector<int> polyIds, std::vector<Polygon> storage) {
+  // Use a copy of im2change and return the image of all the masks applied to that slice.
+  ImageType2D::Pointer mask = ImageType2D::New();
+  ImageType2D::RegionType maskRegionInput = im2change->GetLargestPossibleRegion();
+  mask->SetRegions(maskRegionInput);
+  mask->Allocate();
+  mask->FillBuffer(itk::NumericTraits<PixelType>::Zero);
+  mask->SetOrigin(im2change->GetOrigin());
+  mask->SetSpacing(im2change->GetSpacing());
+  mask->SetDirection(im2change->GetDirection());
+
+  ImageType2D::Pointer lmask = ImageType2D::New();
+  lmask->SetRegions(maskRegionInput);
+  lmask->Allocate();
+  lmask->SetOrigin(im2change->GetOrigin());
+  lmask->SetSpacing(im2change->GetSpacing());
+  lmask->SetDirection(im2change->GetDirection());
+
+  for (int p = 0; p < polyIds.size(); p++) {
+    lmask->FillBuffer(itk::NumericTraits<PixelType>::One);
+
+    using InputPolylineType = itk::PolyLineParametricPath<2>;
+    InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
+    using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
+    InputFilterType::Pointer filter = InputFilterType::New();
+
+    int storageIdx = polyIds[p]; // we just use the first one
+
+    // COPY THE NEW IMAGE from polygon data
+    using VertexType = InputPolylineType::VertexType;
+
+    // Add vertices to the polyline
+    double spacingx = lmask->GetSpacing()[0];
+    double spacingy = lmask->GetSpacing()[1];
+    double originx = lmask->GetOrigin()[0];
+    double originy = lmask->GetOrigin()[1];
+
+    for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
+      VertexType v0;
+      // coordinates are in pixel, we need coordinates based on the bounding box
+      v0[0] = originx + spacingx * storage[storageIdx].coords[j];
+      v0[1] = originy + spacingy * storage[storageIdx].coords[j + 1];
+      // fprintf(stdout, "POLYLINE with %lu elements %f\n", storage[storageIdx].coords.size(), originx + spacingx * storage[storageIdx].coords[j]);
+      inputPolyline->AddVertex(v0);
+    }
+
+    // Connect the input image
+    filter->SetInput1(lmask);
+
+    // Connect the Polyline
+    filter->SetInput2(inputPolyline);
+    try {
+      filter->Update();
+    } catch (itk::ExceptionObject &err) {
+      std::cerr << "ExceptionObject caught !" << std::endl;
+      std::cerr << err << std::endl;
+    }
+    ImageType2D::Pointer lres = filter->GetOutput();
+
+    // now copy the filter output to mask
+    ImageType2D::RegionType maskRegion = mask->GetLargestPossibleRegion();
+    ImageType2D::RegionType lmaskRegion = lres->GetLargestPossibleRegion();
+    itk::ImageRegionIterator<ImageType2D> maskIterator(mask, maskRegion);
+    itk::ImageRegionIterator<ImageType2D> lmaskIterator(lres, lmaskRegion);
+    while (!maskIterator.IsAtEnd() && !lmaskIterator.IsAtEnd()) {
+      if (lmaskIterator.Get() > 0) {
+        maskIterator.Set(1);
+      }
+      ++maskIterator;
+      ++lmaskIterator;
+    }
+  }
+  return mask;
+}
+
 bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
 void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
@@ -428,6 +507,7 @@ int main(int argc, char *argv[]) {
   command.AddField("outdir", "Directory for images/ and labels/ folder as DICOM.", MetaCommand::STRING, true);
 
   command.SetOption("SeriesName", "n", false, "Select series by series name (if more than one series is present).");
+  command.SetOptionLongTag("SeriesName", "seriesname");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
@@ -544,12 +624,10 @@ int main(int argc, char *argv[]) {
 
     SeriesIdContainer runThese;
     if (seriesIdentifierFlag) { // If no optional series identifier
-      // seriesIdentifier = seriesName;
       runThese.push_back(seriesName);
     } else {
       seriesItr = seriesUID.begin();
       seriesEnd = seriesUID.end();
-      // seriesIdentifier = seriesUID.begin()->c_str();
       while (seriesItr != seriesEnd) {
         runThese.push_back(seriesItr->c_str());
         ++seriesItr;
@@ -589,7 +667,7 @@ int main(int argc, char *argv[]) {
         // fprintf(stdout, "NEW SERIESINSTANCEUID: \"%s\"\n", newSeriesInstanceUID);
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
-          using ImageType2D = itk::Image<PixelType, 2>;
+          // using ImageType2D = itk::Image<PixelType, 2>;
           typedef itk::ImageFileReader<ImageType2D> Reader2DType;
           typedef itk::ImageFileWriter<ImageType2D> Writer2DType;
           Reader2DType::Pointer r = Reader2DType::New();
@@ -658,49 +736,49 @@ int main(int argc, char *argv[]) {
               polyIds.push_back(i);
             }
           }
-          using InputPolylineType = itk::PolyLineParametricPath<2>;
-          InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
-          using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
-          InputFilterType::Pointer filter = InputFilterType::New();
+          // using InputPolylineType = itk::PolyLineParametricPath<2>;
+          // InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
+          // using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
+          // InputFilterType::Pointer filter = InputFilterType::New();
+          ImageType2D::Pointer maskFromPolys;
           if (polyIds.size() > 0) {
-            if (polyIds.size() != 1 && verbose) {
-              fprintf(stderr, "Warning: there are more than one polygon for this image. We will ignore all but one.\n");
-            }
+            maskFromPolys = createMaskFromStorage(im2change, polyIds, storage);
 
+            /*
             int storageIdx = polyIds[0]; // we just use the first one
 
             // COPY THE NEW IMAGE from polygon data
             using VertexType = InputPolylineType::VertexType;
 
             // Add vertices to the polyline
-            double spacingx = im2change->GetSpacing()[0];
-            double spacingy = im2change->GetSpacing()[1];
-            double originx = im2change->GetOrigin()[0];
-            double originy = im2change->GetOrigin()[1];
+                        double spacingx = im2change->GetSpacing()[0];
+                        double spacingy = im2change->GetSpacing()[1];
+                        double originx = im2change->GetOrigin()[0];
+                        double originy = im2change->GetOrigin()[1];
 
-            for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
-              VertexType v0;
-              // coordinates are in pixel, we need coordinates based on the bounding box
-              v0[0] = originx + spacingx * storage[storageIdx].coords[j];
-              v0[1] = originy + spacingy * storage[storageIdx].coords[j + 1];
-              inputPolyline->AddVertex(v0);
-            }
+                        for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
+                          VertexType v0;
+                          // coordinates are in pixel, we need coordinates based on the bounding box
+                          v0[0] = originx + spacingx * storage[storageIdx].coords[j];
+                          v0[1] = originy + spacingy * storage[storageIdx].coords[j + 1];
+                          inputPolyline->AddVertex(v0);
+                        }
 
-            // fill the input image with 1 (label)
-            im2change->FillBuffer(itk::NumericTraits<PixelType>::One);
+                        // fill the input image with 1 (label)
+                        im2change->FillBuffer(itk::NumericTraits<PixelType>::One);
 
-            // Connect the input image
-            filter->SetInput1(im2change);
+                        // Connect the input image
+                        filter->SetInput1(im2change);
 
-            // Connect the Polyline
-            filter->SetInput2(inputPolyline);
-            try {
-              filter->Update();
-            } catch (itk::ExceptionObject &err) {
-              std::cerr << "ExceptionObject caught !" << std::endl;
-              std::cerr << err << std::endl;
-              return EXIT_FAILURE;
-            }
+                        // Connect the Polyline
+                        filter->SetInput2(inputPolyline);
+                        try {
+                          filter->Update();
+                        } catch (itk::ExceptionObject &err) {
+                          std::cerr << "ExceptionObject caught !" << std::endl;
+                          std::cerr << err << std::endl;
+                          return EXIT_FAILURE;
+                        } */
           } else { // without polygon just return an empty image
             // fill the input image with 1 (label)
             im2change->FillBuffer(itk::NumericTraits<PixelType>::Zero);
@@ -720,11 +798,11 @@ int main(int argc, char *argv[]) {
 
           ImageType2D::Pointer nImage;
           if (polyIds.size() > 0) {
-            nImage = filter->GetOutput();
+            // nImage = filter->GetOutput();
 
             // ImageType2D::Pointer nImage = filter->GetOutput();
             ImageType2D::PixelContainer *container2;
-            container2 = nImage->GetPixelContainer();
+            container2 = maskFromPolys->GetPixelContainer();
             ImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
 
             // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
