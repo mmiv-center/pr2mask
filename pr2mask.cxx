@@ -65,7 +65,8 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
 #include <boost/filesystem.hpp>
-#include <cstdio>
+#include <codecvt>
+#include <locale> // wstring_convert
 #include <map>
 
 #include "mytypes.h"
@@ -150,10 +151,11 @@ struct Polygon {
   std::string ReferencedSeriesInstanceUID;
   std::string StudyInstanceUID;
   std::string SeriesInstanceUID;
+  std::string UnformattedTextValue;
   std::string Filename; // the name of the DICOM file
 };
 
-bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map<std::string, std::string> *SOPInstanceUID2SeriesInstanceUID) {
+bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map<std::string, std::string> *SOPInstanceUID2SeriesInstanceUID, bool verbose) {
   // read from input and create polygon structs in storage
   // a local cache of the Series that might be referenced
 
@@ -166,7 +168,9 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     gdcm::Reader reader;
     reader.SetFileName(filename.c_str());
     if (!reader.Read()) {
-      std::cerr << "Could not read  \"" << filename << "\" as DICOM, ignore." << std::endl;
+      if (verbose) {
+        std::cerr << "Could not read  \"" << filename << "\" as DICOM, ignore." << std::endl;
+      }
       continue;
     }
 
@@ -186,6 +190,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     const gdcm::Tag numberOfGraphicPoints(0x0070, 0x0021);    // NumberOfGraphicPoints
     const gdcm::Tag graphicData(0x0070, 0x0022);              // GraphicData - n-tupel of Single
     const gdcm::Tag graphicObjectSequence(0x0070, 0x0009);    // GraphicObjectSequence
+    const gdcm::Tag textObjectSequence(0x0070, 0x0008);       // TextObjectSequence
+    const gdcm::Tag unformattedTextValue(0x0070, 0x0006);     // unformattedTextValue
     const gdcm::Tag referencedImageSequence(0x0008, 0x1140);  // ReferencedImageSequence its inside 0x0070,0x0001
     const gdcm::Tag referencedSOPInstanceUID(0x0008, 0x1155); // ReferencedSOPInstanceUID
 
@@ -220,8 +226,9 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
     seriesinstanceuidAttr.Set(ds);
     SeriesInstanceUID = seriesinstanceuidAttr.GetValue();
-    // fprintf(stdout, " found SeriesInstanceUID: %s\n", SeriesInstanceUID.c_str());
-
+    if (verbose) {
+      fprintf(stdout, " found SeriesInstanceUID: %s\n", SeriesInstanceUID.c_str());
+    }
     const gdcm::DataElement &de = ds.GetDataElement(gdcm::Tag(0x0070, 0x0001));
     // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
     gdcm::SmartPointer<gdcm::SequenceOfItems> sqi = de.GetValueAsSQ();
@@ -266,10 +273,12 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
               (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
         */
         if (!subds.FindDataElement(referencedImageSequence)) {
-          // fprintf(stdout, " %d does not have a referenced image sequence\n", itemNr);
+          if (verbose)
+            fprintf(stdout, " %d does not have a referenced image sequence\n", itemNr);
           continue;
         } else {
-          // fprintf(stdout, " %d found a ReferencedImageSequence\n", itemNr);
+          if (verbose)
+            fprintf(stdout, " %d found a ReferencedImageSequence\n", itemNr);
         }
         const gdcm::DataElement &de3 = subds.GetDataElement(referencedImageSequence);
         gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
@@ -279,20 +288,61 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           gdcm::Item &item3 = sqiReferencedImageSequence->GetItem(itemNr2);
           gdcm::DataSet &subds3 = item3.GetNestedDataSet();
           if (!subds3.FindDataElement(referencedSOPInstanceUID)) {
-            // fprintf(stdout, " %d no referencedSOPInstanceUID\n", itemNr);
+            if (verbose)
+              fprintf(stdout, " %d no referencedSOPInstanceUID\n", itemNr);
             continue;
           }
           const gdcm::DataElement &deReferencedSOPInstanceUID = subds3.GetDataElement(referencedSOPInstanceUID);
           const gdcm::ByteValue *bv = deReferencedSOPInstanceUID.GetByteValue();
           std::string refUID(bv->GetPointer(), bv->GetLength());
-          // fprintf(stdout, " found: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
+          if (verbose)
+            fprintf(stdout, " found: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
           poly.ReferencedSOPInstanceUID = boost::algorithm::trim_copy(refUID);
           // the string above might contain a utf-8 version of a null character
           if (poly.ReferencedSOPInstanceUID.back() == '\0')
             poly.ReferencedSOPInstanceUID.replace(poly.ReferencedSOPInstanceUID.end() - 1, poly.ReferencedSOPInstanceUID.end(), "");
         }
 
+        //
+        // this is for items in 0070,0008 textObjectSequence
+        //
+        if (subds.FindDataElement(textObjectSequence)) { // optional
+          /*
+              (0070,0008) SQ (Sequence with explicit length #=1)      # 150, 1 TextObjectSequence
+                (fffe,e000) na (Item with explicit length #=4)          # 142, 1 Item
+                  (0070,0004) CS [PIXEL]                                  #   6, 1 AnchorPointAnnotationUnits
+                  (0070,0006) ST [Min/Max: 7 / 349
+          Mean: 132, Deviation: 103
+          Total: 657?860
+          Pixel... #  94, 1 UnformattedTextValue
+                  (0070,0014) FL 190.5\108.5                              #   8, 2 AnchorPoint
+                  (0070,0015) CS [Y]                                      #   2, 1 AnchorPointVisibility
+                (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+              (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+          */
+          const gdcm::DataElement &de2 = subds.GetDataElement(textObjectSequence);
+          gdcm::SmartPointer<gdcm::SequenceOfItems> sqiTextObjectSequence = de2.GetValueAsSQ();
+          gdcm::SequenceOfItems::SizeType nitems2 = sqiTextObjectSequence->GetNumberOfItems();
+          if (verbose)
+            fprintf(stdout, " graphic object sequence with %lu item(-s)\n", nitems2);
+          for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
+            gdcm::Item &item2 = sqiTextObjectSequence->GetItem(itemNr2);
+            gdcm::DataSet &subds2 = item2.GetNestedDataSet();
+            if (!subds2.FindDataElement(unformattedTextValue)) {
+              if (verbose)
+                fprintf(stdout, " %d no unformatted text value\n", itemNr2);
+              continue;
+            }
+            const gdcm::DataElement &deUnformattedTextValue = subds2.GetDataElement(unformattedTextValue);
+            const gdcm::ByteValue *bv = deUnformattedTextValue.GetByteValue();
+            std::string uTV(bv->GetPointer(), bv->GetLength());
+            poly.UnformattedTextValue = boost::algorithm::trim_copy(uTV);
+          }
+        }
+
+        //
         // this is for items in 0070,0001, now we need to look for 0070,0009
+        //
         if (!subds.FindDataElement(graphicObjectSequence)) {
           // fprintf(stdout, " %d does not have GraphicObjectSequence\n", itemNr);
           continue;
@@ -302,7 +352,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
         const gdcm::DataElement &de2 = subds.GetDataElement(graphicObjectSequence);
         gdcm::SmartPointer<gdcm::SequenceOfItems> sqiGraphicObjectSequence = de2.GetValueAsSQ();
         gdcm::SequenceOfItems::SizeType nitems2 = sqiGraphicObjectSequence->GetNumberOfItems();
-        // fprintf(stdout, " graphic object sequence with %lu item(-s)\n", nitems2);
+        if (verbose)
+          fprintf(stdout, " graphic object sequence with %lu item(-s)\n", nitems2);
         for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
           gdcm::Item &item2 = sqiGraphicObjectSequence->GetItem(itemNr2);
           gdcm::DataSet &subds2 = item2.GetNestedDataSet();
@@ -315,7 +366,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           std::string gT(bv->GetPointer(), bv->GetLength());
 
           if (!subds2.FindDataElement(numberOfGraphicPoints)) {
-            // fprintf(stdout, " %d no number of graphic points\n", itemNr);
+            if (verbose)
+              fprintf(stdout, " %d no number of graphic points\n", itemNr);
             continue;
           }
           const gdcm::DataElement &deNumberOfGraphicPoints = subds2.GetDataElement(numberOfGraphicPoints);
@@ -349,14 +401,17 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           storage->push_back(poly);
         }
       }
-
     } else {
-      fprintf(stdout, "not sequence?\n");
+      if (verbose)
+        fprintf(stdout, "not sequence?\n");
     }
   }
 
   return true;
 }
+
+bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
+void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
 int main(int argc, char *argv[]) {
   boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
@@ -368,7 +423,7 @@ int main(int argc, char *argv[]) {
   command.SetAuthor("Hauke Bartsch");
   command.SetDescription("PR2NII: Convert presentation state files with polygons to nii.");
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
-  command.AddField("outdir", "Directory for output image series.", MetaCommand::STRING, true);
+  command.AddField("outdir", "Directory for images/ and labels/ folder as DICOM.", MetaCommand::STRING, true);
 
   command.SetOption("SeriesName", "n", false, "Select series by series name (if more than one series is present).");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
@@ -410,7 +465,7 @@ int main(int argc, char *argv[]) {
   // the image data
   std::vector<Polygon> storage;
   std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
-  parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID);
+  parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID, verbose);
 
   auto first_element = SOPInstanceUID2SeriesInstanceUID.begin();
   auto pos = SOPInstanceUID2SeriesInstanceUID.find(first_element->first);
@@ -426,12 +481,13 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
-    if (!found) {
-      fprintf(stderr, "Error: Unknown MR (SOPInstanceUID): \"%s\" referenced in \"%s\"\n", storage[i].ReferencedSOPInstanceUID.c_str(),
+    if (!found && verbose) {
+      fprintf(stderr, "Warning: Unknown MR (SOPInstanceUID): \"%s\" referenced in \"%s\"\n", storage[i].ReferencedSOPInstanceUID.c_str(),
               storage[i].Filename.c_str());
     }
   }
-  fprintf(stdout, "We could identify the referenced series for %d/%lu polylines.\n", goodStorage, storage.size());
+  if (verbose)
+    fprintf(stdout, "We could identify the referenced series for %d/%lu polylines.\n", goodStorage, storage.size());
 
   // loop over storage and append to resultJSON
   resultJSON["POLYLINES"] = json::array();
@@ -443,6 +499,10 @@ int main(int argc, char *argv[]) {
     entry["StudyInstanceUID"] = storage[i].StudyInstanceUID;
     entry["SeriesInstanceUID"] = storage[i].SeriesInstanceUID;
     entry["ReferencedSeriesInstanceUID"] = storage[i].ReferencedSeriesInstanceUID;
+
+    std::string a = storage[i].UnformattedTextValue;
+    stripUnicode(a);
+    entry["UnformattedTextValue"] = a; // these might contain non UTF-8 characters, so we remove anything unicode
     resultJSON["POLYLINES"].push_back(entry);
   }
 
@@ -473,12 +533,12 @@ int main(int argc, char *argv[]) {
 
     SeriesIdContainer::const_iterator seriesItr = seriesUID.begin();
     SeriesIdContainer::const_iterator seriesEnd = seriesUID.end();
-    while (seriesItr != seriesEnd) {
+    /*while (seriesItr != seriesEnd) {
       std::cout << "Found DICOM Series: ";
       std::cout << std::endl;
       std::cout << "  " << seriesItr->c_str() << std::endl;
       ++seriesItr;
-    }
+    }*/
 
     std::string seriesIdentifier;
 
@@ -511,8 +571,10 @@ int main(int argc, char *argv[]) {
       if (!doSomething)
         continue;
 
-      std::cout << "Processing series: " << std::endl;
-      std::cout << "  " << seriesIdentifier << std::endl;
+      if (verbose) {
+        std::cout << "Processing series: " << std::endl;
+        std::cout << "  " << seriesIdentifier << std::endl;
+      }
 
       typedef std::vector<std::string> FileNamesContainer;
       FileNamesContainer fileNames;
@@ -582,9 +644,11 @@ int main(int argc, char *argv[]) {
           std::string SeriesInstanceUID;
           std::string SOPInstanceUID;
           std::string seriesNumber;
+          std::string seriesDescription;
           itk::ExposeMetaData<std::string>(dictionary, "0020|000E", SeriesInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|103E", seriesDescription);
           // lookup the correct polygon, we need a loop over multiple polygons we also need
           // outer and inner rings to represent holes. Not something we can get from PACS :-(
           std::vector<int> polyIds;
@@ -599,7 +663,7 @@ int main(int argc, char *argv[]) {
           using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
           InputFilterType::Pointer filter = InputFilterType::New();
           if (polyIds.size() > 0) {
-            if (polyIds.size() != 1) {
+            if (polyIds.size() != 1 && verbose) {
               fprintf(stderr, "Warning: there are more than one polygon for this image. We will ignore all but one.\n");
             }
 
@@ -646,7 +710,7 @@ int main(int argc, char *argv[]) {
           ImageType2D::RegionType region;
           region = im2change->GetBufferedRegion();
           ImageType2D::SizeType size = region.GetSize();
-          std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
+          // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
 
           ImageType2D::PixelContainer *container;
           container = im2change->GetPixelContainer();
@@ -674,7 +738,7 @@ int main(int argc, char *argv[]) {
             }*/
           }
 
-          // dilate and erode the im2change (mask)
+          // dilate and erode the im2change (mask) (would be better if we do this in 3D)
           using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
           using ErodeFilterType = itk::BinaryErodeImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
           using DilateFilterType = itk::BinaryDilateImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
@@ -711,7 +775,7 @@ int main(int argc, char *argv[]) {
           memcpy(buffer2, &(buffer4[0]), size[0] * size[1] * bla);
 
           // now change something to make a new copy of that file
-          int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 2;
+          int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 1;
           gdcm::UIDGenerator uid;
           uid.SetRoot("1.3.6.1.4.1.45037");
           std::string newSOPInstanceUID(uid.Generate());
@@ -721,6 +785,10 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", std::string(newSeriesInstanceUID));
+
+          // set the series description (max 64 characters)
+          std::string newSeriesDescription = seriesDescription + " (mask)";
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newSeriesDescription.substr(0, 64));
 
           w->SetInput(im2change);
           // create the output filename
@@ -734,7 +802,9 @@ int main(int argc, char *argv[]) {
           w->SetFileName(p_out.c_str());
           w->SetImageIO(dicomIO);
 
-          fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID);
+          if (verbose) {
+            fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID);
+          }
 
           try {
             w->Update();
@@ -758,6 +828,13 @@ int main(int argc, char *argv[]) {
         FILE *fp = fopen(csv_out.c_str(), "a");
         fprintf(fp, "\"images/%s\",\"labels/%s\"\n", seriesIdentifier.c_str(), newSeriesInstanceUID);
         fclose(fp);
+
+        std::string res = resultJSON.dump(4) + "\n";
+        // save the json information to a file as well, use folder names
+        boost::filesystem::path json_out = output + boost::filesystem::path::preferred_separator + seriesIdentifier + "_" + newSeriesInstanceUID + ".json";
+        std::ofstream out(json_out.c_str());
+        out << res;
+        out.close();
       }
 
     } // loop over series
@@ -766,17 +843,10 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  std::string res = resultJSON.dump(4) + "\n";
-  /*
-  std::ostringstream o;
-  std::string si(resultJSON["series_identifier"]);
-  si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
-  o << output << "/" << si << ".json";
-  std::ofstream out(o.str());
-  out << res;
-  out.close(); */
-
-  fprintf(stdout, "%s", res.c_str());
+  if (verbose) {
+    std::string res = resultJSON.dump(4) + "\n";
+    fprintf(stdout, "%s", res.c_str());
+  }
 
   return EXIT_SUCCESS;
 }
