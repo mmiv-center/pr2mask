@@ -442,7 +442,6 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
 
     int storageIdx = polyIds[p]; // we just use the first one
 
-    // COPY THE NEW IMAGE from polygon data
     using VertexType = InputPolylineType::VertexType;
 
     // Add vertices to the polyline
@@ -456,7 +455,6 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
       // coordinates are in pixel, we need coordinates based on the bounding box
       v0[0] = originx + spacingx * storage[storageIdx].coords[j];
       v0[1] = originy + spacingy * storage[storageIdx].coords[j + 1];
-      // fprintf(stdout, "POLYLINE with %lu elements %f\n", storage[storageIdx].coords.size(), originx + spacingx * storage[storageIdx].coords[j]);
       inputPolyline->AddVertex(v0);
     }
 
@@ -473,14 +471,18 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
     }
     ImageType2D::Pointer lres = filter->GetOutput();
 
-    // now copy the filter output to mask
+    // now copy the filter output to mask (should be more complex in case of overlapping contours)
     ImageType2D::RegionType maskRegion = mask->GetLargestPossibleRegion();
     ImageType2D::RegionType lmaskRegion = lres->GetLargestPossibleRegion();
     itk::ImageRegionIterator<ImageType2D> maskIterator(mask, maskRegion);
     itk::ImageRegionIterator<ImageType2D> lmaskIterator(lres, lmaskRegion);
     while (!maskIterator.IsAtEnd() && !lmaskIterator.IsAtEnd()) {
       if (lmaskIterator.Get() > 0) {
-        maskIterator.Set(1);
+        if (maskIterator.Get() > 0) {
+          maskIterator.Set(0);
+        } else {
+          maskIterator.Set(1);
+        }
       }
       ++maskIterator;
       ++lmaskIterator;
