@@ -3,35 +3,14 @@
 #include "itkImageFileWriter.h"
 #include "itkImageSeriesReader.h"
 #include "itkMetaDataObject.h"
-#include "itkSmoothingRecursiveGaussianImageFilter.h"
 
 #include "itkBinaryBallStructuringElement.h"
 #include "itkBinaryDilateImageFilter.h"
 #include "itkBinaryErodeImageFilter.h"
-#include "itkBinaryFillholeImageFilter.h"
-#include "itkBinaryThresholdImageFilter.h"
-#include "itkConnectedComponentImageFilter.h"
-//#include "itkExtractImageFilter.h"
-//#include "itkPasteImageFilter.h"
-#include "itkDiscreteGaussianImageFilter.h"
-#include "itkHessianRecursiveGaussianImageFilter.h"
 #include "itkImageAdaptor.h"
-#include "itkLabelImageToShapeLabelMapFilter.h"
-#include "itkLabelShapeKeepNObjectsImageFilter.h"
-#include "itkMinimumMaximumImageCalculator.h"
-#include "itkRGBPixel.h"
-#include "itkSliceBySliceImageFilter.h"
-#include "itkSymmetricEigenAnalysisImageFilter.h"
-#include "itkSymmetricSecondRankTensor.h"
-//#include <itkPixelAccessor.h>
 #include "itkImageRegionConstIterator.h"
 #include "itkImageRegionIterator.h"
-
-#include "itkBSplineInterpolateImageFunction.h"
-#include "itkExtractImageFilter.h"
-#include "itkResampleImageFilter.h"
-#include "itkScalarImageToHistogramGenerator.h"
-#include "itkWindowedSincInterpolateImageFunction.h"
+#include "itkRGBPixel.h"
 
 #include "itkPolyLineParametricPath.h"
 #include "itkPolylineMask2DImageFilter.h"
@@ -73,73 +52,6 @@
 
 using json = nlohmann::json;
 using namespace boost::filesystem;
-
-// forward declaration
-void CopyDictionary(itk::MetaDataDictionary &fromDict, itk::MetaDataDictionary &toDict);
-
-template <typename TFilter> class CommandIterationUpdate : public itk::Command {
-public:
-  typedef CommandIterationUpdate Self;
-  typedef itk::Command Superclass;
-  typedef itk::SmartPointer<Self> Pointer;
-  itkNewMacro(Self);
-
-protected:
-  CommandIterationUpdate() {}
-
-public:
-  virtual void Execute(itk::Object *caller, const itk::EventObject &event) ITK_OVERRIDE { Execute((const itk::Object *)caller, event); }
-
-  virtual void Execute(const itk::Object *object, const itk::EventObject &event) ITK_OVERRIDE {
-    const TFilter *filter = dynamic_cast<const TFilter *>(object);
-
-    if (typeid(event) != typeid(itk::IterationEvent)) {
-      return;
-    }
-    if (filter->GetElapsedIterations() == 1) {
-      std::cout << "Current level = " << filter->GetCurrentLevel() + 1 << std::endl;
-    }
-    std::cout << "  Iteration " << filter->GetElapsedIterations() << " (of " << filter->GetMaximumNumberOfIterations()[filter->GetCurrentLevel()] << ").  ";
-    std::cout << " Current convergence value = " << filter->GetCurrentConvergenceMeasurement() << " (threshold = " << filter->GetConvergenceThreshold() << ")"
-              << std::endl;
-  }
-};
-
-template <typename TValue> TValue Convert(std::string optionString) {
-  TValue value;
-  std::istringstream iss(optionString);
-
-  iss >> value;
-  return value;
-}
-
-template <typename TValue> std::vector<TValue> ConvertVector(std::string optionString) {
-  std::vector<TValue> values;
-  std::string::size_type crosspos = optionString.find('x', 0);
-
-  if (crosspos == std::string::npos) {
-    values.push_back(Convert<TValue>(optionString));
-  } else {
-    std::string element = optionString.substr(0, crosspos);
-    TValue value;
-    std::istringstream iss(element);
-    iss >> value;
-    values.push_back(value);
-    while (crosspos != std::string::npos) {
-      std::string::size_type crossposfrom = crosspos;
-      crosspos = optionString.find('x', crossposfrom + 1);
-      if (crosspos == std::string::npos) {
-        element = optionString.substr(crossposfrom + 1, optionString.length());
-      } else {
-        element = optionString.substr(crossposfrom + 1, crosspos);
-      }
-      std::istringstream iss2(element);
-      iss2 >> value;
-      values.push_back(value);
-    }
-  }
-  return values;
-}
 
 json resultJSON;
 
@@ -941,24 +853,4 @@ int main(int argc, char *argv[]) {
   }
 
   return EXIT_SUCCESS;
-}
-
-void CopyDictionary(itk::MetaDataDictionary &fromDict, itk::MetaDataDictionary &toDict) {
-  typedef itk::MetaDataDictionary DictionaryType;
-
-  DictionaryType::ConstIterator itr = fromDict.Begin();
-  DictionaryType::ConstIterator end = fromDict.End();
-  typedef itk::MetaDataObject<std::string> MetaDataStringType;
-
-  while (itr != end) {
-    itk::MetaDataObjectBase::Pointer entry = itr->second;
-
-    MetaDataStringType::Pointer entryvalue = dynamic_cast<MetaDataStringType *>(entry.GetPointer());
-    if (entryvalue) {
-      std::string tagkey = itr->first;
-      std::string tagvalue = entryvalue->GetMetaDataObjectValue();
-      itk::EncapsulateMetaData<std::string>(toDict, tagkey, tagvalue);
-    }
-    ++itr;
-  }
 }
