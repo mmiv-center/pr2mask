@@ -278,7 +278,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           continue;
         } else {
           if (verbose)
-            fprintf(stdout, " %d found a ReferencedImageSequence\n", itemNr);
+            fprintf(stdout, " [item %d] found a ReferencedImageSequence\n", itemNr);
         }
         const gdcm::DataElement &de3 = subds.GetDataElement(referencedImageSequence);
         gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
@@ -324,7 +324,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           gdcm::SmartPointer<gdcm::SequenceOfItems> sqiTextObjectSequence = de2.GetValueAsSQ();
           gdcm::SequenceOfItems::SizeType nitems2 = sqiTextObjectSequence->GetNumberOfItems();
           if (verbose)
-            fprintf(stdout, " graphic object sequence with %lu item(-s)\n", nitems2);
+            fprintf(stdout, " unformatted text object sequence with %lu item(-s)\n", nitems2);
           for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
             gdcm::Item &item2 = sqiTextObjectSequence->GetItem(itemNr2);
             gdcm::DataSet &subds2 = item2.GetNestedDataSet();
@@ -495,7 +495,7 @@ bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
 void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
 int main(int argc, char *argv[]) {
-  boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
+  boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
   resultJSON["run_date_time"] = to_simple_string(timeLocal);
 
   itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(4);
@@ -548,6 +548,10 @@ int main(int argc, char *argv[]) {
   std::vector<Polygon> storage;
   std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
   parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID, verbose);
+  if (storage.size() == 0) {
+    fprintf(stderr, "Error: No presentation state (PS) files found that contain polylines.\n");
+    exit(-1);
+  }
 
   auto first_element = SOPInstanceUID2SeriesInstanceUID.begin();
   auto pos = SOPInstanceUID2SeriesInstanceUID.find(first_element->first);
@@ -570,6 +574,10 @@ int main(int argc, char *argv[]) {
   }
   if (verbose)
     fprintf(stdout, "We could identify the referenced series for %d/%lu polylines.\n", goodStorage, storage.size());
+  if (goodStorage == 0) {
+    fprintf(stderr, "Error: None of the presentation state files contained a polyline referencing a known MRI file.\n");
+    exit(-1);
+  }
 
   // loop over storage and append to resultJSON
   resultJSON["POLYLINES"] = json::array();
@@ -909,6 +917,10 @@ int main(int argc, char *argv[]) {
         fprintf(fp, "\"images/%s\",\"labels/%s\"\n", seriesIdentifier.c_str(), newSeriesInstanceUID);
         fclose(fp);
 
+        // compute computational time
+        boost::posix_time::ptime timeLocalEnd = boost::posix_time::microsec_clock::local_time();
+        boost::posix_time::time_period tp(timeLocal, timeLocalEnd);
+        resultJSON["wall_time"] = boost::posix_time::to_simple_string(timeLocalEnd - timeLocal);
         std::string res = resultJSON.dump(4) + "\n";
         // save the json information to a file as well, use folder names
         boost::filesystem::path json_out = output + boost::filesystem::path::preferred_separator + seriesIdentifier + "_" + newSeriesInstanceUID + ".json";
