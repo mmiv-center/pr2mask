@@ -787,8 +787,10 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", std::string(newSeriesInstanceUID));
 
           // set the series description (max 64 characters)
-          std::string newSeriesDescription = seriesDescription + " (mask)";
-          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newSeriesDescription.substr(0, 64));
+          if (seriesDescription != "")
+            seriesDescription += " ";
+          std::string newSeriesDescription = seriesDescription + "(mask)";
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|103E", newSeriesDescription.substr(0, 64));
 
           w->SetInput(im2change);
           // create the output filename
