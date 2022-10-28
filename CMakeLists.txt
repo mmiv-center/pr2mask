@@ -55,3 +55,7 @@ ENDIF()
 add_executable(pr2mask pr2mask.cxx)
 target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
 target_compile_features(pr2mask PRIVATE cxx_std_11)
+
+add_executable(mask2rtstruct mask2rtstruct.cxx)
+target_link_libraries(mask2rtstruct ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
+target_compile_features(mask2rtstruct PRIVATE cxx_std_11)
