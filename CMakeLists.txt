@@ -20,7 +20,7 @@ ENDIF()
 
 # SET(CMAKE_CXX_FLAGS "-std=c++0x")
 IF(LINUX)
-  SET(CMAKE_CXX_FLAGS "-std=c++11")
+  SET(CMAKE_CXX_FLAGS "-std=c++17")
 ELSE()
   # find the correct path for isysroot with `xcrun --show-sdk-path`
   SET(CMAKE_CXX_FLAGS "-std=c++11 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")

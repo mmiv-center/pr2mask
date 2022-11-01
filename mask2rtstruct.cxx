@@ -195,10 +195,11 @@ gdcm::DataElement CreateFakeElement(gdcm::Tag const &tag, bool toremove) {
   return de;
 }
 
-void getRT(std::vector<Polygon> storage, ImageType2D::Pointer im2change, gdcm::File *f) {
+void getRT(std::vector<Polygon> storage, ImageType2D::Pointer im2change, boost::filesystem::path filename) {
   // ImageTypeRT::Pointer rt_object = ImageTypeRT::New();
-
-  gdcm::DataSet &ds = f->GetDataSet();
+  gdcm::Writer w;
+  gdcm::File &f = w.GetFile();
+  gdcm::DataSet &ds = f.GetDataSet();
 
   using gdcm::Tag;
   using gdcm::VR;
@@ -220,19 +221,19 @@ void getRT(std::vector<Polygon> storage, ImageType2D::Pointer im2change, gdcm::F
   static const gdcm::Dicts &dicts = g.GetDicts();
   static const gdcm::Dict &pubdict = dicts.GetPublicDict();
 
-  using gdcm::Dict;
-  Dict::ConstIterator dictit = pubdict.Begin();
-  for (; dictit != pubdict.End(); ++dictit) {
-    const gdcm::Tag &dicttag = dictit->first;
-    if (dicttag == Tag(0x6e65, 0x6146))
-      break;
-    // const gdcm::DictEntry &dictentry = dictit->second;
-    ds.Insert(CreateFakeElement(dicttag, false));
-  }
-  ds.Remove(gdcm::Tag(0x400, 0x500));
-  ds.Remove(gdcm::Tag(0x12, 0x62));
-  ds.Remove(gdcm::Tag(0x12, 0x63));
-
+  /* using gdcm::Dict;
+   Dict::ConstIterator dictit = pubdict.Begin();
+   for (; dictit != pubdict.End(); ++dictit) {
+     const gdcm::Tag &dicttag = dictit->first;
+     if (dicttag == Tag(0x6e65, 0x6146))
+       break;
+     // const gdcm::DictEntry &dictentry = dictit->second;
+     ds.Insert(CreateFakeElement(dicttag, false));
+   }
+   ds.Remove(gdcm::Tag(0x400, 0x500));
+   ds.Remove(gdcm::Tag(0x12, 0x62));
+   ds.Remove(gdcm::Tag(0x12, 0x63));
+ */
   // Make sure to override any UID stuff
   gdcm::UIDGenerator uid;
   gdcm::DataElement de(Tag(0x8, 0x18)); // SOP Instance UID
@@ -242,11 +243,20 @@ void getRT(std::vector<Polygon> storage, ImageType2D::Pointer im2change, gdcm::F
   // ds.Insert( de );
   ds.Replace(de);
 
+  /*
+    DataElement subdes( Tag(0x0400,0x0500) );
+    subdes.SetVR(VR::SQ);
+    subdes.SetValue(*sq);
+    subdes.SetVLToUndefined();
+    ds.Insert(subdes);
+    */
+
   de.SetTag(Tag(0x8, 0x16)); // SOP Class UID
   de.SetVR(VR::UI);
   gdcm::MediaStorage ms(gdcm::MediaStorage::RTStructureSetStorage);
   de.SetByteValue(ms.GetString(), (uint32_t)strlen(ms.GetString()));
   ds.Replace(de); // replace !
+
                   /*
                     // gdcm::FileMetaInformation &fmi = f->GetHeader();
                     //  fmi.SetDataSetTransferSyntax( gdcm::TransferSyntax::ImplicitVRLittleEndian );
@@ -286,10 +296,15 @@ void getRT(std::vector<Polygon> storage, ImageType2D::Pointer im2change, gdcm::F
                     ds.Replace(de); // replace !
                   */
   // set the  meta info header
-  gdcm::FileMetaInformation &fmi = f->GetHeader();
+  gdcm::FileMetaInformation &fmi = f.GetHeader();
   fmi.SetDataSetTransferSyntax(gdcm::TransferSyntax::ExplicitVRLittleEndian);
 
-  // return rt_object;
+  w.SetCheckFileMetaInformation(true);
+  w.SetFileName(filename.c_str());
+  if (!w.Write()) {
+    std::cerr << "Error writing file!" << std::endl;
+    // return EXIT_FAILURE;
+  }
 }
 
 std::vector<int> getIntensities(ImageType2D::Pointer im2change) {
@@ -579,20 +594,9 @@ int main(int argc, char *argv[]) {
             create_directories(p_out.parent_path());
           }
 
-          gdcm::Writer w;
-          gdcm::File &f = w.GetFile();
-          if (1) {
-          }
-
-          // getRT(storage, im2change, &file);
+          getRT(storage, im2change, p_out);
           if (verbose)
             fprintf(stdout, " Writing file: %s\n", p_out.c_str());
-          w.SetCheckFileMetaInformation(true);
-          w.SetFileName(p_out.c_str());
-          if (!w.Write()) {
-            std::cerr << "Error writing file!" << std::endl;
-            return EXIT_FAILURE;
-          }
         }
         // we should remember this mapping in a csv file
         boost::filesystem::path csv_out = output + boost::filesystem::path::preferred_separator + "data.csv";
