@@ -795,7 +795,10 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("SeriesName", "seriesname");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
 
-  command.SetOption("UIDFixed", "u", false, "Generate derived identifiers for series and image.");
+  command.SetOption(
+      "UIDFixed", "u", false,
+      "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
+      "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
