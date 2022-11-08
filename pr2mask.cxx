@@ -424,12 +424,19 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("SeriesName", "seriesname");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
 
+  command.SetOption("UIDFixed", "u", false, "Generate derived identifiers for series and image.");
+  command.SetOptionLongTag("UIDFixed", "uid-fixed");
+
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
   if (!command.Parse(argc, argv)) {
     return 1;
   }
+
+  bool uidFixedFlag = false;
+  if (command.GetOptionWasSet("UIDFixed"))
+    uidFixedFlag = true;
 
   bool seriesIdentifierFlag = false;
   std::string input = command.GetValueAsString("indir");
@@ -585,7 +592,9 @@ int main(int argc, char *argv[]) {
       if (1) {
         gdcm::UIDGenerator uid;
         uid.SetRoot("1.3.6.1.4.1.45037");
-        const char *newSeriesInstanceUID = uid.Generate();
+        // set as soon as we know what the previous SeriesInstanceUID was
+        const char *newSeriesInstanceUID = std::string("").c_str();
+
         // fprintf(stdout, "NEW SERIESINSTANCEUID: \"%s\"\n", newSeriesInstanceUID);
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
@@ -649,6 +658,16 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
           itk::ExposeMetaData<std::string>(dictionary, "0008|103E", seriesDescription);
+
+          if (uidFixedFlag) {
+            std::string derivedSeriesInstanceUID = SeriesInstanceUID;
+            // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
+            derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + ".1";
+            newSeriesInstanceUID = derivedSeriesInstanceUID.c_str();
+          } else {
+            newSeriesInstanceUID = uid.Generate();
+          }
+
           // lookup the correct polygon, we need a loop over multiple polygons we also need
           // outer and inner rings to represent holes. Not something we can get from PACS :-(
           std::vector<int> polyIds;
@@ -776,9 +795,15 @@ int main(int argc, char *argv[]) {
 
           // now change something to make a new copy of that file
           int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 1;
-          gdcm::UIDGenerator uid;
-          uid.SetRoot("1.3.6.1.4.1.45037");
-          std::string newSOPInstanceUID(uid.Generate());
+          std::string newSOPInstanceUID = std::string("");
+          if (uidFixedFlag) {
+            newSOPInstanceUID = SOPInstanceUID;
+            newSOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + ".1";
+          } else {
+            gdcm::UIDGenerator uid;
+            uid.SetRoot("1.3.6.1.4.1.45037");
+            newSOPInstanceUID = uid.Generate();
+          }
 
           dicomIO->KeepOriginalUIDOn();
           itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
