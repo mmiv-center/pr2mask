@@ -593,7 +593,7 @@ int main(int argc, char *argv[]) {
         gdcm::UIDGenerator uid;
         uid.SetRoot("1.3.6.1.4.1.45037");
         // set as soon as we know what the previous SeriesInstanceUID was
-        const char *newSeriesInstanceUID = std::string("").c_str();
+        std::string newSeriesInstanceUID("");
 
         // fprintf(stdout, "NEW SERIESINSTANCEUID: \"%s\"\n", newSeriesInstanceUID);
         //  loop over all files in this series
@@ -660,12 +660,19 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0008|103E", seriesDescription);
 
           if (uidFixedFlag) {
-            std::string derivedSeriesInstanceUID = SeriesInstanceUID;
+            std::string derivedSeriesInstanceUID(seriesIdentifier);
+            std::string endString = ".1";
+            // fprintf(stderr, "end is: \"%s\"\n", derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2).c_str());
+            if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".1")
+              endString = ".2";
+
             // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
-            derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + ".1";
-            newSeriesInstanceUID = derivedSeriesInstanceUID.c_str();
+            // fprintf(stderr, "old derivedSeriesInstanceUID: %s\n", derivedSeriesInstanceUID.c_str());
+            derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
+            newSeriesInstanceUID = derivedSeriesInstanceUID;
+            // fprintf(stderr, "new derivedSeriesInstanceUID: %s\n", derivedSeriesInstanceUID.c_str());
           } else {
-            newSeriesInstanceUID = uid.Generate();
+            newSeriesInstanceUID = std::string(uid.Generate());
           }
 
           // lookup the correct polygon, we need a loop over multiple polygons we also need
@@ -798,7 +805,13 @@ int main(int argc, char *argv[]) {
           std::string newSOPInstanceUID = std::string("");
           if (uidFixedFlag) {
             newSOPInstanceUID = SOPInstanceUID;
-            newSOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + ".1";
+            // fprintf(stderr, "old SOPInstanceUID: %s\n", newSOPInstanceUID.c_str());
+            //  end
+            std::string endString = ".1";
+            if (newSOPInstanceUID.substr(newSOPInstanceUID.size() - 2, 2) == ".1")
+              endString = ".2";
+            newSOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + endString;
+            // fprintf(stderr, "new SOPInstanceUID: %s\n", newSOPInstanceUID.c_str());
           } else {
             gdcm::UIDGenerator uid;
             uid.SetRoot("1.3.6.1.4.1.45037");
@@ -809,7 +822,7 @@ int main(int argc, char *argv[]) {
           itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
-          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", std::string(newSeriesInstanceUID));
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newSeriesInstanceUID);
 
           // set the series description (max 64 characters)
           if (seriesDescription != "")
@@ -822,15 +835,16 @@ int main(int argc, char *argv[]) {
           // we should have a folder for each image series
           boost::filesystem::path p(fileNames[sliceNr]);
           boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "labels" + boost::filesystem::path::preferred_separator +
-                                          newSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                          newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
           if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
+            // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
             create_directories(p_out.parent_path());
           }
           w->SetFileName(p_out.c_str());
           w->SetImageIO(dicomIO);
 
           if (verbose) {
-            fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID);
+            fprintf(stdout, "write: %s with %s %s\n", p_out.c_str(), newSOPInstanceUID.c_str(), newSeriesInstanceUID.c_str());
           }
 
           try {
@@ -853,7 +867,7 @@ int main(int argc, char *argv[]) {
           fclose(fp);
         }
         FILE *fp = fopen(csv_out.c_str(), "a");
-        fprintf(fp, "\"images/%s\",\"labels/%s\"\n", seriesIdentifier.c_str(), newSeriesInstanceUID);
+        fprintf(fp, "\"images/%s\",\"labels/%s\"\n", seriesIdentifier.c_str(), newSeriesInstanceUID.c_str());
         fclose(fp);
 
         // compute computational time
