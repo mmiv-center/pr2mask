@@ -1167,9 +1167,7 @@ int main(int argc, char *argv[]) {
               // create the output directory
               create_directories(p_out.parent_path());
             }
-
-            // we only write out slides here that have a polyline - there exist a mask,
-            // we need to write out more files
+            // it would be cool to add a filtered version of the labels as well, but that works only for a single label...  or?
             writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
                                   newFusedSOPInstanceUID, verbose);
           }
