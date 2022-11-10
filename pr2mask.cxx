@@ -94,6 +94,19 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
 
   itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
 
+  std::string SeriesNumber("");
+  std::string studyID("");
+  std::string AcquisitionNumber("");
+  std::string InstanceNumber("");
+  std::string frameOfReferenceUID("");
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0011", SeriesNumber);
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0013", InstanceNumber); // keep that number
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0052", frameOfReferenceUID);
+
+  int newSeriesNumber = atoi(SeriesNumber.c_str()) + 1003;
+
   ImageType2D::Pointer im2change = r->GetOutput();
   ImageType2D::RegionType region;
   region = im2change->GetBufferedRegion();
@@ -217,12 +230,12 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
 
   // now change the DICOM tags for the series and save it again
   // itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
-  // itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000d", studyUID);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newFusedSeriesInstanceUID);
-  // itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
-  // itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0012", std::to_string(newAcquisitionNumber));
-  // itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0013", std::to_string(newInstanceNumber));
-  // itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0052", frameOfReferenceUID); // apply
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0013", InstanceNumber);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0052", frameOfReferenceUID); // apply
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newFusedSOPInstanceUID);
 
   // get Pixel buffer from fused
@@ -289,7 +302,9 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   // create a new frameOfRefenceUID
   gdcm::UIDGenerator fuid;
   fuid.SetRoot("1.3.6.1.4.1.45037");
-  std::string frameOfReferenceUID = fuid.Generate();
+  // do we need a new one here? - only if we don't find one from before
+  if (frameOfReferenceUID == "")
+    frameOfReferenceUID = fuid.Generate();
 
   fd.AddReference(ReferencedSOPClassUID, frameOfReferenceUID.c_str());
   fd.SetPurposeOfReferenceCodeSequenceCodeValue(
