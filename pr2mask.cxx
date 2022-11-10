@@ -230,8 +230,8 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
 
   // now change the DICOM tags for the series and save it again
   // itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
-  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
-  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newFusedSeriesInstanceUID);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000D", studyID);
+  //  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newFusedSeriesInstanceUID); // provided in call to this function
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0013", InstanceNumber);
@@ -441,6 +441,10 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   gdcm::Attribute<0x0020, 0x0052> at14;
   at14.SetValue(frameOfReferenceUID.c_str());
   ds.Replace(at14.GetAsDataElement());
+
+  gdcm::Attribute<0x0020, 0x000e> at15;
+  at15.SetValue(newFusedSeriesInstanceUID);
+  ds.Replace(at15.GetAsDataElement());
 
   gdcm::ImageWriter writer;
   writer.SetImage(image);
@@ -980,7 +984,10 @@ int main(int argc, char *argv[]) {
       // read the images one by one
       if (1) {
         // set as soon as we know what the previous SeriesInstanceUID was
-        std::string newSeriesInstanceUID(""); // we can use seriesIdentifier here
+        std::string newSeriesInstanceUID(""); // we can use seriesIdentifier here, set it only once
+
+        // now store the slice as a new series
+        std::string newFusedSeriesInstanceUID("");
 
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
@@ -1053,9 +1060,11 @@ int main(int argc, char *argv[]) {
             derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
             newSeriesInstanceUID = derivedSeriesInstanceUID;
           } else {
-            gdcm::UIDGenerator uid;
-            uid.SetRoot("1.3.6.1.4.1.45037");
-            newSeriesInstanceUID = std::string(uid.Generate());
+            if (newSeriesInstanceUID == "") {
+              gdcm::UIDGenerator uid;
+              uid.SetRoot("1.3.6.1.4.1.45037");
+              newSeriesInstanceUID = std::string(uid.Generate());
+            } // keep reusing else
           }
 
           // lookup the correct polygon, we need a loop over multiple polygons we also need
@@ -1144,9 +1153,6 @@ int main(int argc, char *argv[]) {
 
           // create a fused image using the mask in binaryErode->GetOutput()
           if (1) {
-            // now store the slice as a new series
-            std::string newFusedSeriesInstanceUID("");
-
             if (uidFixedFlag) {
               std::string derivedFusedSeriesInstanceUID(seriesIdentifier);
               std::string endString = ".3";
@@ -1156,10 +1162,12 @@ int main(int argc, char *argv[]) {
               // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
               derivedFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID.substr(0, 64 - 3) + endString;
               newFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID;
-            } else {
-              gdcm::UIDGenerator uid;
-              uid.SetRoot("1.3.6.1.4.1.45037");
-              newFusedSeriesInstanceUID = std::string(uid.Generate());
+            } else { // we can only do this once!!! not in a loop for each slice
+              if (newFusedSeriesInstanceUID == "") {
+                gdcm::UIDGenerator uid;
+                uid.SetRoot("1.3.6.1.4.1.45037");
+                newFusedSeriesInstanceUID = std::string(uid.Generate());
+              }
             }
 
             std::string newFusedSOPInstanceUID("");
