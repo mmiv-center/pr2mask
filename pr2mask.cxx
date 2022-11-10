@@ -192,7 +192,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
     float scaledP = (inputIterator.Get() - t1) / (t2 - t1);
     float red = scaledP;
     if (fusedLabelIterator.Get() == 1)
-      red = f * scaledP + (1 - f) * (1);
+      red = f * scaledP + (1 - f) * (1); // here we should do instead an image with a uniform color and use the label as 1-alpha
     float blue = scaledP;
     if (fusedLabelIterator.Get() == 3)
       blue = f * scaledP + (1 - f) * (1);
@@ -785,7 +785,7 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetVersion("0.0.1");
+  command.SetVersion("0.0.2");
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
