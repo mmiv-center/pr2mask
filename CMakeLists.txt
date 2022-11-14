@@ -51,9 +51,13 @@ if(TBB_FOUND)
   MESSAGE(STATUS ">>> Found TBB")
 ENDIF()
 
+# Freetype
+find_package(Freetype REQUIRED)
+
 # target_link_libraries(your_target ${Boost_LIBRARIES})
-add_executable(pr2mask pr2mask.cxx)
-target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
+add_executable(pr2mask pr2mask.cxx report.h report.cxx)
+target_include_directories(pr2mask PUBLIC ${FREETYPE_INCLUDE_DIRS})
+target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES})
 target_compile_features(pr2mask PRIVATE cxx_std_11)
 
 add_executable(mask2rtstruct mask2rtstruct.cxx)
