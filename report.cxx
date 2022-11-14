@@ -19,8 +19,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-#define WIDTH 512
-#define HEIGHT 512
+#define WIDTH 2400
+#define HEIGHT 2400
 
 unsigned char image_buffer[HEIGHT][WIDTH];
 
@@ -98,7 +98,7 @@ void saveReport(Report *report) {
   // int font_length = 20;
 
   std::string font_path = font_file;
-  int font_size = 9;
+  int font_size = 11;
   int face_index = 0;
 
   FT_Face face;
@@ -122,7 +122,7 @@ void saveReport(Report *report) {
   int start_py = 10;
   int text_lines = report->summary.size();
 
-  float repeat_spacing = 1.0f;
+  float repeat_spacing = 2.0f;
   int xmax = WIDTH;
   int ymax = HEIGHT;
 
@@ -150,7 +150,7 @@ void saveReport(Report *report) {
 
     int font_size_in_pixel = font_size;
     // fprintf(stdout, "try setting size %d %d\n", font_size_in_pixel, num_chars);
-    error = FT_Set_Char_Size(face, 0, num_chars * 64, 72, 72); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
+    error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
     /* error handling omitted */
     if (error != 0) {
       fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
@@ -218,6 +218,7 @@ void saveReport(Report *report) {
             0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
       }
     }
+    py += (repeat_spacing * 1.0 * font_size);
   }
 
   gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
@@ -247,8 +248,8 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0028, 0x0011), "512");          // Columns
   anon.Replace(gdcm::Tag(0x0028, 0x0030), "0.781\\0.781"); // PixelSpacing
 
-  anon.Replace(gdcm::Tag(0x0028, 0x1050), "0");   // WindowCenter
-  anon.Replace(gdcm::Tag(0x0028, 0x1051), "100"); // WindowWidth
+  anon.Replace(gdcm::Tag(0x0028, 0x1050), "128"); // WindowCenter
+  anon.Replace(gdcm::Tag(0x0028, 0x1051), "255"); // WindowWidth
   anon.Replace(gdcm::Tag(0x0028, 0x1052), "0");   // RescaleIntercept
   anon.Replace(gdcm::Tag(0x0028, 0x1053), "1");   // RescaleSlope
 
