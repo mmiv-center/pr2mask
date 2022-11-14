@@ -263,11 +263,11 @@ void saveReport(Report *report) {
   gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
   im->SetDataElement(pixeldata);
   gdcm::Attribute<0x0008, 0x18> ss;
-  ss.SetValue(report->SOPInstanceUID);
+  ss.SetValue(report->SOPInstanceUID.c_str());
   ds.Replace(ss.GetAsDataElement());
 
   gdcm::Attribute<0x0020, 0x000e> ss2;
-  ss2.SetValue(report->SeriesInstanceUID);
+  ss2.SetValue(report->SeriesInstanceUID.c_str());
   ds.Replace(ss2.GetAsDataElement());
 
   gdcm::ImageWriter writer;
