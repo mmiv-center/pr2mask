@@ -253,6 +253,10 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0028, 0x1052), "0");   // RescaleIntercept
   anon.Replace(gdcm::Tag(0x0028, 0x1053), "1");   // RescaleSlope
 
+  anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
+  anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
+  anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
+
   im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(int8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);
 
