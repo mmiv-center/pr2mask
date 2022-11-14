@@ -244,27 +244,26 @@ void saveReport(Report *report) {
   anon.SetFile(*filePtr);
   anon.Replace(gdcm::Tag(0x0028, 0x0002), "1");            // SamplesperPixel
   anon.Replace(gdcm::Tag(0x0028, 0x0004), "MONOCHROME2");  // PhotometricInterpretation
-  anon.Replace(gdcm::Tag(0x0028, 0x0010), "512");          // Rows
-  anon.Replace(gdcm::Tag(0x0028, 0x0011), "512");          // Columns
-  anon.Replace(gdcm::Tag(0x0028, 0x0030), "0.781\\0.781"); // PixelSpacing
+  anon.Replace(gdcm::Tag(0x0028, 0x0010), std::to_string(HEIGHT).c_str());         // Rows
+  anon.Replace(gdcm::Tag(0x0028, 0x0011), std::to_string(WIDTH).c_str());          // Columns
+  anon.Replace(gdcm::Tag(0x0028, 0x0030), "1\\1"); // PixelSpacing
 
   anon.Replace(gdcm::Tag(0x0028, 0x1050), "128"); // WindowCenter
   anon.Replace(gdcm::Tag(0x0028, 0x1051), "255"); // WindowWidth
   anon.Replace(gdcm::Tag(0x0028, 0x1052), "0");   // RescaleIntercept
   anon.Replace(gdcm::Tag(0x0028, 0x1053), "1");   // RescaleSlope
 
-  im->GetDataElement().SetByteValue(buffer, 512 * 512 * sizeof(int8_t));
+  im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(int8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);
 
   gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
   im->SetDataElement(pixeldata);
-  gdcm::UIDGenerator uid;
   gdcm::Attribute<0x0008, 0x18> ss;
-  ss.SetValue(uid.Generate());
+  ss.SetValue(report->SOPInstanceUID);
   ds.Replace(ss.GetAsDataElement());
 
   gdcm::Attribute<0x0020, 0x000e> ss2;
-  ss2.SetValue(uid.Generate());
+  ss2.SetValue(report->SeriesInstanceUID);
   ds.Replace(ss2.GetAsDataElement());
 
   gdcm::ImageWriter writer;
