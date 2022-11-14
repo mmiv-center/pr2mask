@@ -214,7 +214,7 @@ void saveReport(Report *report) {
         float alpha_blend = (v + w * (1.0f - v));
 
         // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
-        bvals[idx] = (signed short)std::max(
+        bvals[idx] = (unsigned char)std::max(
             0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
       }
     }
