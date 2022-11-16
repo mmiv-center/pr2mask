@@ -16,6 +16,7 @@ typedef struct {
   std::string FrameOfReferenceUID;
   std::string StudyID; // 16 chars max
   std::string AccessionNumber;
+  std::string SeriesDescription;
   std::vector<std::string> summary;
 } Report;
 

@@ -60,6 +60,7 @@ Report *getDefaultReportStruct() {
     report->AccessionNumber = report->AccessionNumber.substr(0, 16);
   }
 
+  report->SeriesDescription = std::string("Report");
   return report;
 }
 
@@ -263,6 +264,7 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
   anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
   anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
+  anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
 
   im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(int8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);
