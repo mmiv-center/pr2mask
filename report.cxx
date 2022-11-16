@@ -171,6 +171,10 @@ void saveReport(Report *report) {
     pen.y = (target_height - 20) * 64;
     const char *text = report->summary[line].c_str();
     for (n = 0; n < num_chars; n++) {
+      if (text[n] == '\n') {
+        continue; // ignore newlines
+      }
+
       /* set transformation */
       FT_Set_Transform(face, &matrix, &pen);
 
@@ -256,6 +260,8 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
   anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
   anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
+  anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
+  anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
 
   im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(int8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);

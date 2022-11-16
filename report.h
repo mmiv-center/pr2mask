@@ -8,6 +8,8 @@
 
 typedef struct {
   std::string filename;
+  std::string PatientName;
+  std::string PatientID;
   std::string SOPInstanceUID; // 64chars max
   std::string SeriesInstanceUID;
   std::string StudyInstanceUID;

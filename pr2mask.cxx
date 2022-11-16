@@ -18,6 +18,10 @@
 #include "itkRGBPixel.h"
 #include "itkScalarImageToHistogramGenerator.h"
 
+#include "itkConnectedComponentImageFilter.h"
+#include "itkLabelImageToShapeLabelMapFilter.h"
+#include "itkLabelShapeKeepNObjectsImageFilter.h"
+
 #include "gdcmAnonymizer.h"
 #include "gdcmAttribute.h"
 #include "gdcmDataSetHelper.h"
@@ -801,6 +805,126 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
   return mask;
 }
 
+void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries) {
+
+  typedef itk::GDCMSeriesFileNames NamesGeneratorType;
+  NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
+
+  nameGenerator->SetUseSeriesDetails(false); // we want to use the keys as SeriesInstanceUIDs
+  nameGenerator->AddSeriesRestriction("0008|0060");
+  nameGenerator->SetRecursive(true);
+  nameGenerator->SetDirectory(output_path);
+
+  typedef itk::Image<unsigned short, 3> MaskImageType;
+
+  typedef std::vector<std::string> FileNamesContainer;
+  FileNamesContainer fileNames;
+
+  typedef itk::ImageSeriesReader<MaskImageType> MaskReaderType;
+  MaskReaderType::Pointer reader = MaskReaderType::New();
+
+  typedef itk::GDCMImageIO ImageIOType;
+  ImageIOType::Pointer dicomIO = ImageIOType::New();
+  dicomIO->LoadPrivateTagsOn();
+
+  reader->SetImageIO(dicomIO);
+
+  fileNames = nameGenerator->GetFileNames(labelSeries);
+  reader->SetFileNames(fileNames);
+
+  try {
+    reader->Update();
+  } catch (itk::ExceptionObject &ex) {
+    std::cout << ex << std::endl;
+    return;
+  }
+
+  using LabelType = unsigned short;
+  using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
+  using LabelMapType = itk::LabelMap<ShapeLabelObjectType>;
+
+  MaskImageType::Pointer mask = reader->GetOutput();
+  // using the above generator we can read in the image and label series again as volumes
+
+  using ConnectedComponentImageFilterType = itk::ConnectedComponentImageFilter<MaskImageType, MaskImageType>;
+  using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType, LabelMapType>;
+
+  auto connected = ConnectedComponentImageFilterType::New();
+  connected->SetInput(mask);
+  connected->Update();
+
+  using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType, LabelMapType>;
+  auto i2l = I2LType::New();
+  i2l->SetInput(connected->GetOutput());
+  i2l->SetComputePerimeter(true);
+  i2l->Update();
+
+  LabelMapType *labelMap = i2l->GetOutput();
+  /*std::cout << "File "
+            << "\"" << labelSeries << "\""
+            << " has " << labelMap->GetNumberOfLabelObjects() << " labels." << std::endl; */
+
+  // Retrieve all attributes
+  std::stringstream buf;
+  for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+    buf.str("");
+    buf << "3D region: " << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
+    report->summary.push_back(buf.str());
+    buf.str(""); // clear the buffer
+    buf << "    BoundingBox: " << labelObject->GetBoundingBox();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    NumberOfPixels: " << labelObject->GetNumberOfPixels();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    PhysicalSize: " << labelObject->GetPhysicalSize();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    Centroid: " << labelObject->GetCentroid();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    NumberOfPixelsOnBorder: " << labelObject->GetNumberOfPixelsOnBorder();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    PerimeterOnBorder: " << labelObject->GetPerimeterOnBorder();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    FeretDiameter: " << labelObject->GetFeretDiameter();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    PrincipalMoments: " << labelObject->GetPrincipalMoments();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    PrincipalAxes: " << labelObject->GetPrincipalAxes();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    Elongation: " << labelObject->GetElongation();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    Perimeter: " << labelObject->GetPerimeter();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    Roundness: " << labelObject->GetRoundness();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    EquivalentSphericalRadius: " << labelObject->GetEquivalentSphericalRadius();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    EquivalentSphericalPerimeter: " << labelObject->GetEquivalentSphericalPerimeter();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    EquivalentEllipsoidDiameter: " << labelObject->GetEquivalentEllipsoidDiameter();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    Flatness: " << labelObject->GetFlatness();
+    report->summary.push_back(buf.str());
+    buf.str("");
+    buf << "    PerimeterOnBorderRatio: " << labelObject->GetPerimeterOnBorderRatio();
+    report->summary.push_back(buf.str());
+  }
+}
+
 bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
 void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
@@ -953,6 +1077,8 @@ int main(int argc, char *argv[]) {
     }*/
 
     std::string seriesIdentifier;
+    std::string PatientName("");
+    std::string PatientID("");
 
     SeriesIdContainer runThese;
     if (seriesIdentifierFlag) { // If no optional series identifier
@@ -1062,6 +1188,13 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
           itk::ExposeMetaData<std::string>(dictionary, "0008|103E", seriesDescription);
           itk::ExposeMetaData<std::string>(dictionary, "0020|000D", StudyInstanceUID);
+
+          if (PatientName == "") {
+            itk::ExposeMetaData<std::string>(dictionary, "0010|0010", PatientName);
+          }
+          if (PatientID == "") {
+            itk::ExposeMetaData<std::string>(dictionary, "0010|0020", PatientName);
+          }
 
           if (uidFixedFlag) {
             std::string derivedSeriesInstanceUID(seriesIdentifier);
@@ -1304,6 +1437,15 @@ int main(int argc, char *argv[]) {
 
         // create a report for this series as well
         Report *report = getDefaultReportStruct();
+        report->summary = {{"Research PACS Report (MMIV)"}};
+        report->summary.push_back(resultJSON["wall_time"]);
+        report->StudyInstanceUID = StudyInstanceUID; // but use a new series and SOPInstanceUID generated by getDefaultReportStruct
+        report->PatientName = PatientName;
+        report->PatientID = PatientID;
+
+        // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
+        computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
+
         // overwrite some report values
         boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "reports" + boost::filesystem::path::preferred_separator +
                                         newSeriesInstanceUID.c_str() + ".dcm";
@@ -1312,9 +1454,6 @@ int main(int argc, char *argv[]) {
           create_directories(p_out.parent_path());
         }
         report->filename = std::string(p_out.c_str());
-        report->StudyInstanceUID = StudyInstanceUID; // but use a new series and SOPInstanceUID generated by getDefaultReportStruct
-        report->summary = {{"Research PACS Report (MMIV)"}};
-        report->summary.push_back(resultJSON["wall_time"]);
 
         saveReport(report);
       }
