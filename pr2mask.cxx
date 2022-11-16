@@ -242,7 +242,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
 
   // now change the DICOM tags for the series and save it again
   // itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
-  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000D", studyID);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
   //  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newFusedSeriesInstanceUID); // provided in call to this function
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
@@ -1153,6 +1153,21 @@ int main(int argc, char *argv[]) {
           // now changed the slice we are importing
           ImageType2D::Pointer im2change = r->GetOutput();
 
+          // get some meta-data from the opened file (find out what polygons are relevant)
+          typedef itk::MetaDataDictionary DictionaryType;
+          itk::MetaDataDictionary &dictionary = r->GetOutput()->GetMetaDataDictionary();
+
+          // DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
+          std::string SeriesInstanceUID;
+          std::string SOPInstanceUID;
+          std::string seriesNumber;
+          std::string seriesDescription;
+          itk::ExposeMetaData<std::string>(dictionary, "0020|000e", SeriesInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription);
+          itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
+
           // make a copy of this image series in the output/images/ folder
           if (1) {
             w->SetInput(im2change);
@@ -1176,24 +1191,11 @@ int main(int argc, char *argv[]) {
             }
           }
 
-          // get some meta-data from the opened file (find out what polygons are relevant)
-          typedef itk::MetaDataDictionary DictionaryType;
-          DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
-          std::string SeriesInstanceUID;
-          std::string SOPInstanceUID;
-          std::string seriesNumber;
-          std::string seriesDescription;
-          itk::ExposeMetaData<std::string>(dictionary, "0020|000E", SeriesInstanceUID);
-          itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
-          itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
-          itk::ExposeMetaData<std::string>(dictionary, "0008|103E", seriesDescription);
-          itk::ExposeMetaData<std::string>(dictionary, "0020|000D", StudyInstanceUID);
-
           if (PatientName == "") {
             itk::ExposeMetaData<std::string>(dictionary, "0010|0010", PatientName);
           }
           if (PatientID == "") {
-            itk::ExposeMetaData<std::string>(dictionary, "0010|0020", PatientName);
+            itk::ExposeMetaData<std::string>(dictionary, "0010|0020", PatientID);
           }
 
           if (uidFixedFlag) {
@@ -1376,13 +1378,13 @@ int main(int argc, char *argv[]) {
           itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
-          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newSeriesInstanceUID);
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newSeriesInstanceUID);
 
           // set the series description (max 64 characters)
           if (seriesDescription != "")
             seriesDescription += " ";
           std::string newSeriesDescription = seriesDescription + "(mask)";
-          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|103E", newSeriesDescription.substr(0, 64));
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|103e", newSeriesDescription.substr(0, 64));
 
           w->SetInput(im2change);
           // create the output filename

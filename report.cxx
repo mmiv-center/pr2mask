@@ -262,6 +262,7 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
   anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
   anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
+  anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
 
   im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(int8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);
@@ -275,6 +276,18 @@ void saveReport(Report *report) {
   gdcm::Attribute<0x0020, 0x000e> ss2;
   ss2.SetValue(report->SeriesInstanceUID.c_str());
   ds.Replace(ss2.GetAsDataElement());
+
+  gdcm::Attribute<0x0010, 0x0010> ss3;
+  ss3.SetValue(report->PatientName.c_str());
+  ds.Replace(ss3.GetAsDataElement());
+
+  gdcm::Attribute<0x0010, 0x0020> ss4;
+  ss4.SetValue(report->PatientID.c_str());
+  ds.Replace(ss4.GetAsDataElement());
+
+  gdcm::Attribute<0x0020, 0x000d> ss5;
+  ss5.SetValue(report->StudyInstanceUID.c_str());
+  ds.Replace(ss5.GetAsDataElement());
 
   gdcm::ImageWriter writer;
   writer.SetImage(*im);
