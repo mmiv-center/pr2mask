@@ -886,6 +886,71 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
             << "\"" << labelSeries << "\""
             << " has " << labelMap->GetNumberOfLabelObjects() << " labels." << std::endl; */
 
+  /* some more texture features:
+  
+//definitions of used types
+typedef itk::Image<float, 3> InternalImageType;
+typedef itk::Image<unsigned char, 3> VisualizingImageType;
+typedef itk::Neighborhood<float, 3> NeighborhoodType;
+typedef itk::Statistics::ScalarImageToCooccurrenceMatrixFilter<InternalImageType>
+Image2CoOccuranceType;
+typedef Image2CoOccuranceType::HistogramType HistogramType;
+typedef itk::Statistics::HistogramToTextureFeaturesFilter<HistogramType> Hist2FeaturesType;
+typedef InternalImageType::OffsetType OffsetType;
+typedef itk::AddImageFilter <InternalImageType> AddImageFilterType;
+typedef itk::MultiplyImageFilter<InternalImageType> MultiplyImageFilterType;
+
+void calcTextureFeatureImage (OffsetType offset, InternalImageType::Pointer inputImage)
+{
+// principal variables
+//Gray Level Co-occurance Matrix Generator
+Image2CoOccuranceType::Pointer glcmGenerator=Image2CoOccuranceType::New();
+glcmGenerator->SetOffset(offset);
+glcmGenerator->SetNumberOfBinsPerAxis(16); //reasonable number of bins
+glcmGenerator->SetPixelValueMinMax(0, 255); //for input UCHAR pixel type
+Hist2FeaturesType::Pointer featureCalc=Hist2FeaturesType::New();
+//Region Of Interest
+typedef itk::RegionOfInterestImageFilter<InternalImageType,InternalImageType> roiType;
+roiType::Pointer roi=roiType::New();
+roi->SetInput(inputImage);
+
+
+
+InternalImageType::RegionType window;
+InternalImageType::RegionType::SizeType size;
+size.Fill(50);
+window.SetSize(size);
+
+window.SetIndex(0,0);
+window.SetIndex(1,0);
+window.SetIndex(2,0);
+
+roi->SetRegionOfInterest(window);
+roi->Update();
+
+glcmGenerator->SetInput(roi->GetOutput());
+glcmGenerator->Update();
+
+featureCalc->SetInput(glcmGenerator->GetOutput());
+featureCalc->Update();
+
+std::cout<<"\n Entropy : ";
+std::cout<<featureCalc->GetEntropy()<<"\n Energy";
+std::cout<<featureCalc->GetEnergy()<<"\n Correlation";
+std::cout<<featureCalc->GetCorrelation()<<"\n Inertia";             
+std::cout<<featureCalc->GetInertia()<<"\n HaralickCorrelation";
+std::cout<<featureCalc->GetHaralickCorrelation()<<"\n InverseDifferenceMoment";
+std::cout<<featureCalc->GetInverseDifferenceMoment()<<"\nClusterProminence";
+std::cout<<featureCalc->GetClusterProminence()<<"\nClusterShade";
+std::cout<<featureCalc->GetClusterShade();
+}  
+  
+  
+  
+  
+  
+  */
+
   // Retrieve all attributes
   std::stringstream buf;
   int imageMin = 0;
@@ -950,11 +1015,11 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
 
     // we should check for this labelObject in image what the intensities are
     if (1) {
-      float sum = 0.0f; int counter = 0;
+      float sum = 0.0f; int counter = 0; int v; itk::Index<3U> index;
       std::vector<int> pixelValues;
       for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
-        itk::Index<3U> index = labelObject->GetIndex(pixelId);
-        int v = image->GetPixel(index);
+        index = labelObject->GetIndex(pixelId);
+        v = image->GetPixel(index);
         if (pixelId == 0) {
           imageMin = v;
           imageMax = v;
@@ -968,7 +1033,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
         if (v > imageMax)
           imageMax = v;
       }
-      float median = 0;
+      int median = 0;
       sort(pixelValues.begin(), pixelValues.end());
       int size = pixelValues.size();
       if ((pixelValues.size() % 2) == 0) {
