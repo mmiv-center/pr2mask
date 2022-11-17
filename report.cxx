@@ -239,7 +239,7 @@ void saveReport(Report *report) {
   im->GetPixelFormat().SetBitsAllocated(8); // change_image.GetPixelFormat().GetBitsAllocated());
   im->GetPixelFormat().SetBitsStored(8);    // change_image.GetPixelFormat().GetBitsStored());
   im->GetPixelFormat().SetHighBit(7);
-  im->GetPixelFormat().SetPixelRepresentation(gdcm::PixelFormat::INT8);
+  im->GetPixelFormat().SetPixelRepresentation(gdcm::PixelFormat::UINT8);
   im->SetSlope(1.0);
   im->SetIntercept(0);
 
@@ -257,6 +257,7 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0028, 0x1051), "255"); // WindowWidth
   anon.Replace(gdcm::Tag(0x0028, 0x1052), "0");   // RescaleIntercept
   anon.Replace(gdcm::Tag(0x0028, 0x1053), "1");   // RescaleSlope
+                                                  //  anon.Replace(gdcm::Tag(0x0028, 0x0103), "0");   // use unsigned 0..255
 
   anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
   anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
