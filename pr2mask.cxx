@@ -950,6 +950,8 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
 
     // we should check for this labelObject in image what the intensities are
     if (1) {
+      float sum = 0.0f; int counter = 0;
+      std::vector<int> pixelValues;
       for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
         itk::Index<3U> index = labelObject->GetIndex(pixelId);
         int v = image->GetPixel(index);
@@ -958,16 +960,36 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
           imageMax = v;
           imageMean = v;
         }
+        pixelValues.push_back(v);
+        sum += v;
+        counter++;
         if (v < imageMin)
           imageMin = v;
         if (v > imageMax)
           imageMax = v;
+      }
+      float median = 0;
+      sort(pixelValues.begin(), pixelValues.end());
+      int size = pixelValues.size();
+      if ((pixelValues.size() % 2) == 0) {
+         median = (pixelValues[size / - 1] + pixelValues[size / 2]) / 2;
+      } else {
+         median = pixelValues[size / 2];
       }
       buf.str("");
       buf << "    Min intensity: " << imageMin;
       report->summary.push_back(buf.str());
       buf.str("");
       buf << "    Max intensity: " << imageMax;
+      report->summary.push_back(buf.str());
+      buf.str("");
+      buf << "    Mean intensity: " << (sum/counter);
+      report->summary.push_back(buf.str());
+      buf.str("");
+      buf << "    Sum intensity: " << (sum);
+      report->summary.push_back(buf.str());
+      buf.str("");
+      buf << "    Median intensity: " << (median);
       report->summary.push_back(buf.str());
     }
   }
