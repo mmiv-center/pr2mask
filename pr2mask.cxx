@@ -958,12 +958,27 @@ std::cout<<featureCalc->GetClusterShade();
   int imageMean = 0;
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+
+    std::map<std::string, std::string> *meas = new std::map<std::string, std::string>();
+    report->measures.push_back(*meas);
+    buf.str("");
+    buf << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
+    meas->insert(std::make_pair("region_number" , buf.str()));
     buf.str("");
     buf << "3D region: " << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetBoundingBox();
+    meas->insert(std::make_pair("boundingbox" , buf.str()));
     buf.str(""); // clear the buffer
     buf << "    BoundingBox: " << labelObject->GetBoundingBox();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetNumberOfPixels();
+    meas->insert(std::make_pair("number_of_pixel" , buf.str()));
+
     buf.str("");
     buf << "    NumberOfPixels: " << labelObject->GetNumberOfPixels();
     report->summary.push_back(buf.str());

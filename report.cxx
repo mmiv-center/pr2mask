@@ -61,6 +61,7 @@ Report *getDefaultReportStruct() {
   }
 
   report->SeriesDescription = std::string("Report");
+  report->measures = std::vector< std::map<std::string, std::string> >();
   return report;
 }
 

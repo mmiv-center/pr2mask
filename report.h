@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 // a simple report builder that exports a DICOM file
 // provide the information required to setup the report
 
@@ -18,6 +19,7 @@ typedef struct {
   std::string AccessionNumber;
   std::string SeriesDescription;
   std::vector<std::string> summary;
+  std::vector<std::map<std::string, std::string> > measures;
 } Report;
 
 Report *getDefaultReportStruct();
