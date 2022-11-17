@@ -816,18 +816,27 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   nameGenerator->SetDirectory(output_path);
 
   typedef itk::Image<unsigned short, 3> MaskImageType;
+  typedef itk::Image<unsigned short, 3> ImageType3D;
 
   typedef std::vector<std::string> FileNamesContainer;
-  FileNamesContainer fileNames;
+  FileNamesContainer fileNames;  // for the label series
+  FileNamesContainer fileNames2; // for the image series
 
   typedef itk::ImageSeriesReader<MaskImageType> MaskReaderType;
   MaskReaderType::Pointer reader = MaskReaderType::New();
+
+  typedef itk::ImageSeriesReader<ImageType3D> ImageReaderType;
+  ImageReaderType::Pointer readerImage = ImageReaderType::New();
 
   typedef itk::GDCMImageIO ImageIOType;
   ImageIOType::Pointer dicomIO = ImageIOType::New();
   dicomIO->LoadPrivateTagsOn();
 
+  ImageIOType::Pointer dicomIOImage = ImageIOType::New();
+  dicomIOImage->LoadPrivateTagsOn();
+
   reader->SetImageIO(dicomIO);
+  readerImage->SetImageIO(dicomIOImage);
 
   fileNames = nameGenerator->GetFileNames(labelSeries);
   reader->SetFileNames(fileNames);
@@ -838,6 +847,19 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
     std::cout << ex << std::endl;
     return;
   }
+
+  fileNames2 = nameGenerator->GetFileNames(imageSeries);
+  readerImage->SetFileNames(fileNames2);
+
+  try {
+    readerImage->Update();
+  } catch (itk::ExceptionObject &ex) {
+    std::cout << ex << std::endl;
+    return;
+  }
+
+  // we should read in the image series as well - we want to compute some biomarkers from that series
+  ImageType3D::Pointer image = readerImage->GetOutput();
 
   using LabelType = unsigned short;
   using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
@@ -866,6 +888,9 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
 
   // Retrieve all attributes
   std::stringstream buf;
+  int imageMin = 0;
+  int imageMax = 0;
+  int imageMean = 0;
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
     buf.str("");
@@ -922,6 +947,29 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
     buf.str("");
     buf << "    PerimeterOnBorderRatio: " << labelObject->GetPerimeterOnBorderRatio();
     report->summary.push_back(buf.str());
+
+    // we should check for this labelObject in image what the intensities are
+    if (1) {
+      for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+        itk::Index<3U> index = labelObject->GetIndex(pixelId);
+        int v = image->GetPixel(index);
+        if (pixelId == 0) {
+          imageMin = v;
+          imageMax = v;
+          imageMean = v;
+        }
+        if (v < imageMin)
+          imageMin = v;
+        if (v > imageMax)
+          imageMax = v;
+      }
+      buf.str("");
+      buf << "    Min intensity: " << imageMin;
+      report->summary.push_back(buf.str());
+      buf.str("");
+      buf << "    Max intensity: " << imageMax;
+      report->summary.push_back(buf.str());
+    }
   }
 }
 
@@ -1447,6 +1495,8 @@ int main(int argc, char *argv[]) {
         report->PatientName = PatientName;
         report->PatientID = PatientID;
         report->SeriesDescription = seriesDescription + " (report)";
+
+        // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
 
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
