@@ -978,52 +978,111 @@ std::cout<<featureCalc->GetClusterShade();
     buf.str("");
     buf << labelObject->GetNumberOfPixels();
     meas->insert(std::make_pair("number_of_pixel" , buf.str()));
-
     buf.str("");
     buf << "    NumberOfPixels: " << labelObject->GetNumberOfPixels();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetPhysicalSize();
+    meas->insert(std::make_pair("physical_size" , buf.str()));
     buf.str("");
     buf << "    PhysicalSize: " << labelObject->GetPhysicalSize();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetCentroid();
+    meas->insert(std::make_pair("centroid" , buf.str()));
     buf.str("");
     buf << "    Centroid: " << labelObject->GetCentroid();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetNumberOfPixelsOnBorder();
+    meas->insert(std::make_pair("pixel_on_border" , buf.str()));
     buf.str("");
     buf << "    NumberOfPixelsOnBorder: " << labelObject->GetNumberOfPixelsOnBorder();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetPerimeterOnBorder();
+    meas->insert(std::make_pair("perimeter_on_border" , buf.str()));
     buf.str("");
     buf << "    PerimeterOnBorder: " << labelObject->GetPerimeterOnBorder();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetFeretDiameter();
+    meas->insert(std::make_pair("feret_diameter" , buf.str()));
     buf.str("");
     buf << "    FeretDiameter: " << labelObject->GetFeretDiameter();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetPrincipalMoments();
+    meas->insert(std::make_pair("principal_moments" , buf.str()));
     buf.str("");
     buf << "    PrincipalMoments: " << labelObject->GetPrincipalMoments();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetPrincipalAxes();
+    meas->insert(std::make_pair("principal_axes" , buf.str()));
     buf.str("");
     buf << "    PrincipalAxes: " << labelObject->GetPrincipalAxes();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetElongation();
+    meas->insert(std::make_pair("elongation" , buf.str()));
     buf.str("");
     buf << "    Elongation: " << labelObject->GetElongation();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetPerimeter();
+    meas->insert(std::make_pair("perimeter" , buf.str()));
     buf.str("");
     buf << "    Perimeter: " << labelObject->GetPerimeter();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetRoundness();
+    meas->insert(std::make_pair("roundness" , buf.str()));
     buf.str("");
     buf << "    Roundness: " << labelObject->GetRoundness();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetEquivalentSphericalRadius();
+    meas->insert(std::make_pair("equivalent_spherical_radius" , buf.str()));
     buf.str("");
     buf << "    EquivalentSphericalRadius: " << labelObject->GetEquivalentSphericalRadius();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetEquivalentSphericalPerimeter();
+    meas->insert(std::make_pair("equivalent_spherical_perimeter" , buf.str()));
     buf.str("");
     buf << "    EquivalentSphericalPerimeter: " << labelObject->GetEquivalentSphericalPerimeter();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetEquivalentEllipsoidDiameter();
+    meas->insert(std::make_pair("equivalent_ellipsoid_diameter" , buf.str()));
     buf.str("");
     buf << "    EquivalentEllipsoidDiameter: " << labelObject->GetEquivalentEllipsoidDiameter();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetFlatness();
+    meas->insert(std::make_pair("flatness" , buf.str()));
     buf.str("");
     buf << "    Flatness: " << labelObject->GetFlatness();
     report->summary.push_back(buf.str());
+
+    buf.str("");
+    buf << labelObject->GetPerimeterOnBorderRatio();
+    meas->insert(std::make_pair("perimeter_on_border_ratio" , buf.str()));
     buf.str("");
     buf << "    PerimeterOnBorderRatio: " << labelObject->GetPerimeterOnBorderRatio();
     report->summary.push_back(buf.str());
@@ -1057,17 +1116,36 @@ std::cout<<featureCalc->GetClusterShade();
          median = pixelValues[size / 2];
       }
       buf.str("");
+      buf << imageMin;
+      meas->insert(std::make_pair("image_intensity_min" , buf.str()));
+      buf.str("");
       buf << "    Min intensity: " << imageMin;
       report->summary.push_back(buf.str());
+
+      buf.str("");
+      buf << imageMax;
+      meas->insert(std::make_pair("image_intensity_max" , buf.str()));
       buf.str("");
       buf << "    Max intensity: " << imageMax;
       report->summary.push_back(buf.str());
+
+      buf.str("");
+      buf << imageMean;
+      meas->insert(std::make_pair("image_intensity_mean" , buf.str()));
       buf.str("");
       buf << "    Mean intensity: " << (sum/counter);
       report->summary.push_back(buf.str());
+
+      buf.str("");
+      buf << sum;
+      meas->insert(std::make_pair("image_intensity_sum" , buf.str()));   
       buf.str("");
       buf << "    Sum intensity: " << (sum);
       report->summary.push_back(buf.str());
+
+      buf.str("");
+      buf << median;
+      meas->insert(std::make_pair("image_intensity_median" , buf.str()));
       buf.str("");
       buf << "    Median intensity: " << (median);
       report->summary.push_back(buf.str());
