@@ -209,8 +209,8 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 
   // do this in two steps, first compute three label color channels, smooth them and alpha-blend last
-  typedef float FPixelType; 
-  typedef itk::Image<FPixelType, 2> FloatImageType;
+  typedef float FPixelType;
+  // typedef itk::Image<FPixelType, 2> FloatImageType;
   using FloatImageType = itk::Image<FPixelType, 2>;
   FloatImageType::Pointer red_channel = FloatImageType::New();
   FloatImageType::Pointer green_channel = FloatImageType::New();
@@ -257,28 +257,28 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   using GFilterType = itk::DiscreteGaussianImageFilter<FloatImageType, FloatImageType>;
   auto gaussFilterR = GFilterType::New();
   gaussFilterR->SetInput(red_channel);
-  gaussFilterR->SetVariance(1.5);
-  gaussFilterR->SetMaximumKernelWidth(3);
+  // gaussFilterR->SetMaximumKernelWidth(3);
+  gaussFilterR->SetVariance(1.5f);
   gaussFilterR->Update();
   FloatImageType::Pointer smoothRed = gaussFilterR->GetOutput();
 
   auto gaussFilterG = GFilterType::New();
   gaussFilterG->SetInput(green_channel);
-  gaussFilterG->SetVariance(1.5);
-  gaussFilterG->SetMaximumKernelWidth(3);
+  // gaussFilterG->SetMaximumKernelWidth(3);
+  gaussFilterG->SetVariance(1.5f);
   gaussFilterG->Update();
   FloatImageType::Pointer smoothGreen = gaussFilterG->GetOutput();
 
   auto gaussFilterB = GFilterType::New();
   gaussFilterB->SetInput(blue_channel);
-  gaussFilterB->SetVariance(1.5);
-  gaussFilterB->SetMaximumKernelWidth(3);
+  // gaussFilterB->SetMaximumKernelWidth(3);
+  gaussFilterB->SetVariance(1.5f);
   gaussFilterB->Update();
   FloatImageType::Pointer smoothBlue = gaussFilterB->GetOutput();
 
-  itk::ImageRegionIterator<FloatImageType> redSIterator(smoothBlue, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> redSIterator(smoothRed, fusedRegion);
   itk::ImageRegionIterator<FloatImageType> greenSIterator(smoothGreen, fusedRegion);
-  itk::ImageRegionIterator<FloatImageType> blueSIterator(smoothRed, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> blueSIterator(smoothBlue, fusedRegion);
 
   // now use the smaoothed color channels (clamp them between 0 and 1)
   inputIterator.GoToBegin();
@@ -296,14 +296,14 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
     green = greenSIterator.Get();
     blue = blueSIterator.Get();
 
-    red = std::min<float>(1, std::max<float>(0, red));
-    green = std::min<float>(1, std::max<float>(0, green));
-    blue = std::min<float>(1, std::max<float>(0, blue));
-
     // alpha blend
     red = f * scaledP + red * (1 - f);
     green = f * scaledP + green * (1 - f);
     blue = f * scaledP + blue * (1 - f);
+
+    red = std::min<float>(1, std::max<float>(0, red));
+    green = std::min<float>(1, std::max<float>(0, green));
+    blue = std::min<float>(1, std::max<float>(0, blue));
 
     value.SetRed((int)(red * 255));
     value.SetGreen((int)(green * 255));
@@ -916,7 +916,6 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
 }
 
 void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries) {
-
   typedef itk::GDCMSeriesFileNames NamesGeneratorType;
   NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
 
@@ -1070,7 +1069,6 @@ std::cout<<featureCalc->GetClusterShade();
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
 
     std::map<std::string, std::string> *meas = new std::map<std::string, std::string>();
-    report->measures.push_back(*meas);
     buf.str("");
     buf << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
     meas->insert(std::make_pair("region_number" , buf.str()));
@@ -1199,7 +1197,9 @@ std::cout<<featureCalc->GetClusterShade();
 
     // we should check for this labelObject in image what the intensities are
     if (1) {
-      float sum = 0.0f; int counter = 0; int v; itk::Index<3U> index;
+      float sum = 0.0f;
+      int v;
+      itk::Index<3U> index;
       std::vector<int> pixelValues;
       for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
         index = labelObject->GetIndex(pixelId);
@@ -1207,23 +1207,22 @@ std::cout<<featureCalc->GetClusterShade();
         if (pixelId == 0) {
           imageMin = v;
           imageMax = v;
-          imageMean = v;
         }
         pixelValues.push_back(v);
         sum += v;
-        counter++;
         if (v < imageMin)
           imageMin = v;
         if (v > imageMax)
           imageMax = v;
       }
+      imageMean = sum / pixelValues.size();
       int median = 0;
       sort(pixelValues.begin(), pixelValues.end());
       int size = pixelValues.size();
       if ((pixelValues.size() % 2) == 0) {
-         median = (pixelValues[size / - 1] + pixelValues[size / 2]) / 2;
+        median = (pixelValues[size / 2 - 1] + pixelValues[size / 2]) / 2;
       } else {
-         median = pixelValues[size / 2];
+        median = pixelValues[size / 2];
       }
       buf.str("");
       buf << imageMin;
@@ -1243,7 +1242,7 @@ std::cout<<featureCalc->GetClusterShade();
       buf << imageMean;
       meas->insert(std::make_pair("image_intensity_mean" , buf.str()));
       buf.str("");
-      buf << "    Mean intensity: " << (sum/counter);
+      buf << "    Mean intensity: " << (imageMean);
       report->summary.push_back(buf.str());
 
       buf.str("");
@@ -1259,6 +1258,8 @@ std::cout<<featureCalc->GetClusterShade();
       buf.str("");
       buf << "    Median intensity: " << (median);
       report->summary.push_back(buf.str());
+
+      report->measures.push_back(*meas);
     }
   }
 }
@@ -1770,7 +1771,7 @@ int main(int argc, char *argv[]) {
         // create a report for this series as well
         Report *report = getDefaultReportStruct();
         report->summary = {{"Research PACS Report (MMIV)"}};
-        report->summary.push_back(resultJSON["wall_time"]);
+        // report->summary.push_back(resultJSON["wall_time"]);
         report->StudyInstanceUID = StudyInstanceUID; // but use a new series and SOPInstanceUID generated by getDefaultReportStruct
         report->PatientName = PatientName;
         report->PatientID = PatientID;
