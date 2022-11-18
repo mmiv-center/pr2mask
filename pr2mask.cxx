@@ -1656,16 +1656,6 @@ int main(int argc, char *argv[]) {
         fprintf(fp, "\"images/%s\",\"labels/%s\"\n", seriesIdentifier.c_str(), newSeriesInstanceUID.c_str());
         fclose(fp);
 
-        // compute computational time
-        boost::posix_time::ptime timeLocalEnd = boost::posix_time::microsec_clock::local_time();
-        boost::posix_time::time_period tp(timeLocal, timeLocalEnd);
-        resultJSON["wall_time"] = boost::posix_time::to_simple_string(timeLocalEnd - timeLocal);
-        std::string res = resultJSON.dump(4) + "\n";
-        // save the json information to a file as well, use folder names
-        boost::filesystem::path json_out = output + boost::filesystem::path::preferred_separator + seriesIdentifier + "_" + newSeriesInstanceUID + ".json";
-        std::ofstream out(json_out.c_str());
-        out << res;
-        out.close();
 
         // create a report for this series as well
         Report *report = getDefaultReportStruct();
@@ -1689,8 +1679,24 @@ int main(int argc, char *argv[]) {
           create_directories(p_out.parent_path());
         }
         report->filename = std::string(p_out.c_str());
-
         saveReport(report);
+
+        // add measures to json output
+        resultJSON["measures"] = report->measures;
+
+        // compute computational time
+        boost::posix_time::ptime timeLocalEnd = boost::posix_time::microsec_clock::local_time();
+        boost::posix_time::time_period tp(timeLocal, timeLocalEnd);
+        resultJSON["wall_time"] = boost::posix_time::to_simple_string(timeLocalEnd - timeLocal);
+        std::string res = resultJSON.dump(4) + "\n";
+        // save the json information to a file as well, use folder names
+        boost::filesystem::path json_out = output + boost::filesystem::path::preferred_separator + seriesIdentifier + "_" + newSeriesInstanceUID + ".json";
+        std::ofstream out(json_out.c_str());
+        out << res;
+        out.close();
+
+
+
       }
 
     } // loop over series

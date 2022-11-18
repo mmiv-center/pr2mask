@@ -268,7 +268,7 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
   anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
 
-  im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(int8_t));
+  im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(uint8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);
 
   gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
