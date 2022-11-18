@@ -22,6 +22,9 @@
 #include "itkLabelImageToShapeLabelMapFilter.h"
 #include "itkLabelShapeKeepNObjectsImageFilter.h"
 
+#include "itkDiscreteGaussianImageFilter.h"
+
+
 #include "gdcmAnonymizer.h"
 #include "gdcmAttribute.h"
 #include "gdcmDataSetHelper.h"
@@ -204,8 +207,121 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   }
 
   std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+
+  // do this in two steps, first compute three label color channels, smooth them and alpha-blend last
+  typedef float FPixelType; 
+  typedef itk::Image<FPixelType, 2> FloatImageType;
+  using FloatImageType = itk::Image<FPixelType, 2>;
+  FloatImageType::Pointer red_channel = FloatImageType::New();
+  FloatImageType::Pointer green_channel = FloatImageType::New();
+  FloatImageType::Pointer blue_channel = FloatImageType::New();
+  fusedRegion = im2change->GetLargestPossibleRegion();
+  red_channel->SetRegions(fusedRegion);
+  red_channel->Allocate();
+  red_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  red_channel->SetOrigin(im2change->GetOrigin());
+  red_channel->SetSpacing(im2change->GetSpacing());
+  red_channel->SetDirection(im2change->GetDirection());
+  green_channel->SetRegions(fusedRegion);
+  green_channel->Allocate();
+  green_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  green_channel->SetOrigin(im2change->GetOrigin());
+  green_channel->SetSpacing(im2change->GetSpacing());
+  green_channel->SetDirection(im2change->GetDirection());
+  blue_channel->SetRegions(fusedRegion);
+  blue_channel->Allocate();
+  blue_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  blue_channel->SetOrigin(im2change->GetOrigin());
+  blue_channel->SetSpacing(im2change->GetSpacing());
+  blue_channel->SetDirection(im2change->GetDirection());
+  itk::ImageRegionIterator<FloatImageType> redIterator(red_channel, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> greenIterator(green_channel, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> blueIterator(blue_channel, fusedRegion);
+
+  fusedLabelIterator.GoToBegin();
+  redIterator.GoToBegin();
+  greenIterator.GoToBegin();
+  blueIterator.GoToBegin();
+  while (!fusedLabelIterator.IsAtEnd() && !redIterator.IsAtEnd() && !greenIterator.IsAtEnd() && !blueIterator.IsAtEnd()) {
+    // this will crash with many labels (more than in our const array)
+    redIterator.Set(labelColors[fusedLabelIterator.Get()][0]); // values are 0..1
+    greenIterator.Set(labelColors[fusedLabelIterator.Get()][1]);
+    blueIterator.Set(labelColors[fusedLabelIterator.Get()][2]);
+    ++redIterator;
+    ++greenIterator;
+    ++blueIterator;
+    ++fusedLabelIterator;
+  }
+
+  // now smooth with Gaussian (each channel independently)
+  using GFilterType = itk::DiscreteGaussianImageFilter<FloatImageType, FloatImageType>;
+  auto gaussFilterR = GFilterType::New();
+  gaussFilterR->SetInput(red_channel);
+  gaussFilterR->SetVariance(1.5);
+  gaussFilterR->SetMaximumKernelWidth(3);
+  gaussFilterR->Update();
+  FloatImageType::Pointer smoothRed = gaussFilterR->GetOutput();
+
+  auto gaussFilterG = GFilterType::New();
+  gaussFilterG->SetInput(green_channel);
+  gaussFilterG->SetVariance(1.5);
+  gaussFilterG->SetMaximumKernelWidth(3);
+  gaussFilterG->Update();
+  FloatImageType::Pointer smoothGreen = gaussFilterG->GetOutput();
+
+  auto gaussFilterB = GFilterType::New();
+  gaussFilterB->SetInput(blue_channel);
+  gaussFilterB->SetVariance(1.5);
+  gaussFilterB->SetMaximumKernelWidth(3);
+  gaussFilterB->Update();
+  FloatImageType::Pointer smoothBlue = gaussFilterB->GetOutput();
+
+  itk::ImageRegionIterator<FloatImageType> redSIterator(smoothBlue, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> greenSIterator(smoothGreen, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> blueSIterator(smoothRed, fusedRegion);
+
+  // now use the smaoothed color channels (clamp them between 0 and 1)
+  inputIterator.GoToBegin();
+  fusedIterator.GoToBegin();
+  redSIterator.GoToBegin();
+  greenSIterator.GoToBegin();
+  blueSIterator.GoToBegin();
   float f = 0.6;
-  float alphaB = 0.75;
+  float red, green, blue;
+  while (!inputIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
+    float scaledP = ((float) inputIterator.Get() - t1) / (t2 - t1);
+    CPixelType value = fusedIterator.Value();
+
+    red = redSIterator.Get();
+    green = greenSIterator.Get();
+    blue = blueSIterator.Get();
+
+    red = std::min<float>(1, std::max<float>(0, red));
+    green = std::min<float>(1, std::max<float>(0, green));
+    blue = std::min<float>(1, std::max<float>(0, blue));
+
+    // alpha blend
+    red = f * scaledP + red * (1 - f);
+    green = f * scaledP + green * (1 - f);
+    blue = f * scaledP + blue * (1 - f);
+
+    value.SetRed((int)(red * 255));
+    value.SetGreen((int)(green * 255));
+    value.SetBlue((int)(blue * 255));
+    fusedIterator.Set(value);
+
+    ++inputIterator; 
+    ++fusedIterator;
+    ++redSIterator;
+    ++greenSIterator;
+    ++blueSIterator;    
+  }
+
+  //float f = 0.6;
+  /*float alphaB = 0.75;
+  fusedLabelIterator.GoToBegin();
+  fusedIterator.GoToBegin();
+  inputIterator.GoToBegin();
   while (!fusedLabelIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !inputIterator.IsAtEnd()) {
     // is this a copy of do we really write the color here?
     CPixelType value = fusedIterator.Value();
@@ -218,12 +334,6 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
     green = f * scaledP + labelColors[fusedLabelIterator.Get()][1] * alphaB * (1 - f);
     blue = f * scaledP + labelColors[fusedLabelIterator.Get()][2] * alphaB * (1 - f);
     //}
-    /*    if (fusedLabelIterator.Get() == 1)
-          red = f * scaledP + (1 - f) * (1); // here we should do instead an image with a uniform color and use the label as 1-alpha
-        if (fusedLabelIterator.Get() == 3)
-          blue = f * scaledP + (1 - f) * (1);
-        if (fusedLabelIterator.Get() == 2)
-          green = f * scaledP + (1 - f) * (1); */
 
     red = std::min<float>(1, std::max<float>(0, red));
     green = std::min<float>(1, std::max<float>(0, green));
@@ -238,7 +348,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
     ++fusedIterator;
     ++fusedLabelIterator;
     ++inputIterator;
-  }
+  } */
 
   // now change the DICOM tags for the series and save it again
   // itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
@@ -1684,7 +1794,7 @@ int main(int argc, char *argv[]) {
         // add measures to json output
         resultJSON["measures"] = report->measures;
 
-        // compute computational time
+        // computational time
         boost::posix_time::ptime timeLocalEnd = boost::posix_time::microsec_clock::local_time();
         boost::posix_time::time_period tp(timeLocal, timeLocalEnd);
         resultJSON["wall_time"] = boost::posix_time::to_simple_string(timeLocalEnd - timeLocal);
