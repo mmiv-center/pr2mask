@@ -1781,6 +1781,12 @@ int main(int argc, char *argv[]) {
 
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
+        int key_fact = 0;
+        for (int i = 0; i < report->measures.size(); i++) {
+          key_fact += std::stof(report->measures[i].find("physical_size")->second);
+        }
+        report->key_fact = std::to_string(key_fact);
+        report->key_unit = std::string("mm^3");
 
         // overwrite some report values
         boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "reports" + boost::filesystem::path::preferred_separator +

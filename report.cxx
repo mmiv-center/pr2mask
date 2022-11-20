@@ -62,6 +62,8 @@ Report *getDefaultReportStruct() {
 
   report->SeriesDescription = std::string("Report");
   report->measures = std::vector< std::map<std::string, std::string> >();
+  report->key_fact = std::string("");
+  report->key_unit = std::string("");
   return report;
 }
 
@@ -76,6 +78,143 @@ void draw_bitmap(FT_Bitmap *bitmap, FT_Int x, FT_Int y) {
         continue;
 
       image_buffer[j][i] |= bitmap->buffer[q * bitmap->width + p];
+    }
+  }
+}
+
+void addToReport(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
+  FT_Library library;
+
+  double angle;
+  int target_height;
+  int n, num_chars;
+
+  // int font_length = 20;
+
+  std::string font_path = font_file;
+  // int font_size = 42;
+  int face_index = 0;
+
+  FT_Face face;
+  FT_GlyphSlot slot;
+  FT_Matrix matrix; /* transformation matrix */
+  FT_Vector pen;    /* untransformed origin  */
+  FT_Error error;
+  // gdcm::ImageReader reader;
+
+  // unsigned long len = WIDTH * HEIGHT * 8;
+  //  char *buffer = new char[len];
+
+  error = FT_Init_FreeType(&library); /* initialize library */
+
+  if (error != 0) {
+    fprintf(stderr, "Error: The freetype library could not be initialized with this font.\n");
+    return;
+  }
+
+  int start_px = 10;
+  int start_py = 10;
+  int text_lines = 1;
+
+  float repeat_spacing = 2.0f;
+  int xmax = WIDTH;
+  int ymax = HEIGHT;
+  num_chars = stext.size();
+
+  int px = posx;
+  // WIDTH - ((num_chars + 2) * font_size - start_px);
+  // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+  int py = posy;
+  // start_py + 2.0 * (font_size);
+
+  memset(image_buffer, 0, HEIGHT * WIDTH);
+
+  angle = radiants;
+  target_height = HEIGHT;
+
+  error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
+
+  if (face == NULL) {
+    fprintf(stderr, "Error: no face found, provide the filename of a ttf file...\n");
+    return;
+  }
+
+  int font_size_in_pixel = font_size;
+  error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
+  /* error handling omitted */
+  if (error != 0) {
+    fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+    return;
+  }
+
+  slot = face->glyph;
+
+  /* set up matrix */
+  matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+  matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+  matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+  matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+  /* the pen position in 26.6 cartesian space coordinates; */
+  /* start at (300,200) relative to the upper left corner  */
+  pen.x = (num_chars * 1 * 64);
+  pen.y = (target_height - 80) * 64; // the 60 here is related to the font size!
+  const char *text = stext.c_str();
+  for (n = 0; n < num_chars; n++) {
+    if (text[n] == '\n') {
+      continue; // ignore newlines
+    }
+
+    /* set transformation */
+    FT_Set_Transform(face, &matrix, &pen);
+
+    error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+    if (error)
+      continue; /* ignore errors */
+
+    /* now, draw to our target surface (convert position) draws into image_buffer */
+    draw_bitmap(&slot->bitmap, slot->bitmap_left, target_height - slot->bitmap_top);
+
+    /* increment pen position */
+    pen.x += slot->advance.x;
+    pen.y += slot->advance.y;
+  }
+
+  FT_Done_Face(face);
+
+  // int px = start_px;
+  // int py = start_py + 10.0 * (font_size);
+  //  (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+
+  float current_image_min_value = 0.0f;
+  float current_image_max_value = 255.0f;
+  unsigned char *bvals = (unsigned char *)buffer;
+  for (int yi = 0; yi < HEIGHT; yi++) {
+    for (int xi = 0; xi < WIDTH; xi++) {
+      if (image_buffer[yi][xi] == 0)
+        continue;
+      // I would like to copy the value from image over to
+      // the buffer. At some good location...
+
+      int newx = px + xi;
+      int newy = py + yi;
+      int idx = newy * xmax + newx;
+      if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
+        continue;
+      if (image_buffer[yi][xi] == 0)
+        continue;
+
+      // instead of blending we need to use a fixed overlay color
+      // we have image information between current_image_min_value and current_image_max_value
+      // we need to scale the image_buffer by those values.
+      float f = 0;
+      float v = 1.0f * image_buffer[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
+      float w = 1.0f * bvals[idx] / current_image_max_value;
+      float alpha_blend = (v + w * (1.0f - v));
+
+      // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
+      bvals[idx] = (unsigned char)std::max(
+          0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
     }
   }
 }
@@ -225,6 +364,148 @@ void saveReport(Report *report) {
       }
     }
     py += (repeat_spacing * 1.0 * font_size);
+  }
+
+  // write the key fact a little bit larger on the top right
+  if (1) {
+    FT_Library library;
+
+    double angle;
+    int target_height;
+    int n, num_chars;
+
+    // int font_length = 20;
+
+    std::string font_path = font_file;
+    int font_size = 42;
+    int face_index = 0;
+
+    FT_Face face;
+    FT_GlyphSlot slot;
+    FT_Matrix matrix; /* transformation matrix */
+    FT_Vector pen;    /* untransformed origin  */
+    FT_Error error;
+    // gdcm::ImageReader reader;
+
+    unsigned long len = WIDTH * HEIGHT * 8;
+    // char *buffer = new char[len];
+
+    error = FT_Init_FreeType(&library); /* initialize library */
+
+    if (error != 0) {
+      fprintf(stderr, "Error: The freetype library could not be initialized with this font.\n");
+      return;
+    }
+
+    int start_px = 10;
+    int start_py = 10;
+    int text_lines = 1;
+
+    float repeat_spacing = 2.0f;
+    int xmax = WIDTH;
+    int ymax = HEIGHT;
+    num_chars = report->key_fact.size();
+
+    int px = WIDTH - ((num_chars + 2) * font_size - start_px);
+    // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+    int py = start_py + 2.0 * (font_size);
+
+    memset(image_buffer, 0, HEIGHT * WIDTH);
+
+    angle = 0;
+    target_height = HEIGHT;
+
+    error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
+
+    if (face == NULL) {
+      fprintf(stderr, "Error: no face found, provide the filename of a ttf file...\n");
+      return;
+    }
+
+    int font_size_in_pixel = 36;
+    error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
+    /* error handling omitted */
+    if (error != 0) {
+      fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+      return;
+    }
+
+    slot = face->glyph;
+
+    /* set up matrix */
+    matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+    matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+    matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+    matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+    /* the pen position in 26.6 cartesian space coordinates; */
+    /* start at (300,200) relative to the upper left corner  */
+    pen.x = (num_chars * 1 * 64);
+    pen.y = (target_height - 80) * 64; // the 60 here is related to the font size!
+    const char *text = report->key_fact.c_str();
+    for (n = 0; n < num_chars; n++) {
+      if (text[n] == '\n') {
+        continue; // ignore newlines
+      }
+
+      /* set transformation */
+      FT_Set_Transform(face, &matrix, &pen);
+
+      error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+      if (error)
+        continue; /* ignore errors */
+
+      /* now, draw to our target surface (convert position) draws into image_buffer */
+      draw_bitmap(&slot->bitmap, slot->bitmap_left, target_height - slot->bitmap_top);
+
+      /* increment pen position */
+      pen.x += slot->advance.x;
+      pen.y += slot->advance.y;
+    }
+
+    FT_Done_Face(face);
+
+    // int px = start_px;
+    // int py = start_py + 10.0 * (font_size);
+    //  (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+
+    float current_image_min_value = 0.0f;
+    float current_image_max_value = 255.0f;
+    unsigned char *bvals = (unsigned char *)buffer;
+    for (int yi = 0; yi < HEIGHT; yi++) {
+      for (int xi = 0; xi < WIDTH; xi++) {
+        if (image_buffer[yi][xi] == 0)
+          continue;
+        // I would like to copy the value from image over to
+        // the buffer. At some good location...
+
+        int newx = px + xi;
+        int newy = py + yi;
+        int idx = newy * xmax + newx;
+        if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
+          continue;
+        if (image_buffer[yi][xi] == 0)
+          continue;
+
+        // instead of blending we need to use a fixed overlay color
+        // we have image information between current_image_min_value and current_image_max_value
+        // we need to scale the image_buffer by those values.
+        float f = 0;
+        float v = 1.0f * image_buffer[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
+        float w = 1.0f * bvals[idx] / current_image_max_value;
+        float alpha_blend = (v + w * (1.0f - v));
+
+        // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
+        bvals[idx] = (unsigned char)std::max(
+            0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
+      }
+    }
+    // add the units
+    //    int px = WIDTH - ((num_chars + 2) * font_size - start_px);
+    //    int py = start_py + 2.0 * (font_size);
+
+    addToReport(buffer, font_file, 26, std::string("mm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
+    addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
   }
 
   gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
