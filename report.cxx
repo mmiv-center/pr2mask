@@ -382,15 +382,15 @@ void saveReport(Report *report) {
 
     FT_Face face;
     FT_GlyphSlot slot;
-    FT_Matrix matrix; /* transformation matrix */
-    FT_Vector pen;    /* untransformed origin  */
+    FT_Matrix matrix;
+    FT_Vector pen;
     FT_Error error;
     // gdcm::ImageReader reader;
 
     unsigned long len = WIDTH * HEIGHT * 8;
     // char *buffer = new char[len];
 
-    error = FT_Init_FreeType(&library); /* initialize library */
+    error = FT_Init_FreeType(&library);
 
     if (error != 0) {
       fprintf(stderr, "Error: The freetype library could not be initialized with this font.\n");
@@ -415,7 +415,7 @@ void saveReport(Report *report) {
     angle = 0;
     target_height = HEIGHT;
 
-    error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
+    error = FT_New_Face(library, font_file.c_str(), face_index, &face);
 
     if (face == NULL) {
       fprintf(stderr, "Error: no face found, provide the filename of a ttf file...\n");
@@ -423,8 +423,7 @@ void saveReport(Report *report) {
     }
 
     int font_size_in_pixel = 36;
-    error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
-    /* error handling omitted */
+    error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0);
     if (error != 0) {
       fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
       return;
@@ -432,14 +431,11 @@ void saveReport(Report *report) {
 
     slot = face->glyph;
 
-    /* set up matrix */
     matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
     matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
     matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
     matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
 
-    /* the pen position in 26.6 cartesian space coordinates; */
-    /* start at (300,200) relative to the upper left corner  */
     pen.x = (num_chars * 1 * 64);
     pen.y = (target_height - 80) * 64; // the 60 here is related to the font size!
     const char *text = report->key_fact.c_str();
@@ -448,17 +444,14 @@ void saveReport(Report *report) {
         continue; // ignore newlines
       }
 
-      /* set transformation */
       FT_Set_Transform(face, &matrix, &pen);
 
       error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
       if (error)
-        continue; /* ignore errors */
+        continue;
 
-      /* now, draw to our target surface (convert position) draws into image_buffer */
       draw_bitmap(&slot->bitmap, slot->bitmap_left, target_height - slot->bitmap_top);
 
-      /* increment pen position */
       pen.x += slot->advance.x;
       pen.y += slot->advance.y;
     }
@@ -504,6 +497,7 @@ void saveReport(Report *report) {
     //    int px = WIDTH - ((num_chars + 2) * font_size - start_px);
     //    int py = start_py + 2.0 * (font_size);
 
+    // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
     addToReport(buffer, font_file, 26, std::string("mm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
     addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
   }
