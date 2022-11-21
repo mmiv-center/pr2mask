@@ -1197,7 +1197,7 @@ std::cout<<featureCalc->GetClusterShade();
 
     // we should check for this labelObject in image what the intensities are
     if (1) {
-      float sum = 0.0f;
+      double sum = 0.0f;
       int v;
       itk::Index<3U> index;
       std::vector<int> pixelValues;
@@ -1224,6 +1224,21 @@ std::cout<<featureCalc->GetClusterShade();
       } else {
         median = pixelValues[size / 2];
       }
+      float stdev = 0.0f;
+      double sum2 = 0.0f;
+      for (int i = 0; i < pixelValues.size(); i++) {
+        sum2 += (pixelValues[i]-imageMean)*(pixelValues[i]-imageMean);
+      }
+      sum2 /= (pixelValues.size()-1);
+      stdev = std::sqrt(sum2);
+
+      buf.str("");
+      buf << stdev;
+      meas->insert(std::make_pair("image_intensity_stdev" , buf.str()));
+      buf.str("");
+      buf << "    Stdev intensity: " << stdev;
+      report->summary.push_back(buf.str());
+
       buf.str("");
       buf << imageMin;
       meas->insert(std::make_pair("image_intensity_min" , buf.str()));
