@@ -1353,7 +1353,7 @@ int main(int argc, char *argv[]) {
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
-  command.AddField("outdir", "Directory for images/ and labels/ folder as DICOM.", MetaCommand::STRING, true);
+  command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM.", MetaCommand::STRING, true);
 
   command.SetOption("SeriesName", "n", false, "Select series by series name (if more than one series is present).");
   command.SetOptionLongTag("SeriesName", "seriesname");
@@ -1541,6 +1541,9 @@ int main(int argc, char *argv[]) {
         // keep the SeriesDescription around so we can use it later
         std::string seriesDescription;
 
+        // remember the last SOPInstanceUID from the list of images
+        std::string SOPInstanceUID;
+
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
           // using ImageType2D = itk::Image<PixelType, 2>;
@@ -1573,7 +1576,7 @@ int main(int argc, char *argv[]) {
 
           // DictionaryType &dictionary = dicomIO->GetMetaDataDictionary();
           std::string SeriesInstanceUID;
-          std::string SOPInstanceUID;
+          SOPInstanceUID = std::string("");
           std::string seriesNumber;
           itk::ExposeMetaData<std::string>(dictionary, "0020|000e", SeriesInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
@@ -1850,6 +1853,22 @@ int main(int argc, char *argv[]) {
         report->SeriesDescription = seriesDescription + " (report)";
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
+        if (uidFixedFlag) {
+          std::string derivedSeriesInstanceUID(seriesIdentifier);
+          std::string endString = ".3";
+          if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".3")
+            endString = ".4";
+          // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
+          derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
+          report->SeriesInstanceUID = derivedSeriesInstanceUID;
+
+          std::string newSOPInstanceUID = SOPInstanceUID;
+          if (newSOPInstanceUID.substr(newSOPInstanceUID.size() - 2, 2) == ".3")
+            endString = ".4";
+          report->SOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + endString;
+        }
+
+
 
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
