@@ -17,4 +17,6 @@ RUN mkdir /pr2mask && cd /pr2mask/ \
     && echo "Change this string to make this rebuild on docker build" \
     && cmake . && make
 
+ENV REPORT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+
 ENTRYPOINT [ "/pr2mask/pr2mask" ]
