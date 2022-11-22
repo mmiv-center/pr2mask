@@ -1027,6 +1027,8 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   auto i2l = I2LType::New();
   i2l->SetInput(connected->GetOutput());
   i2l->SetComputePerimeter(true);
+  i2l->SetComputeFeretDiameter(true);
+  i2l->SetComputeOrientedBoundingBox(true);
   i2l->Update();
 
   LabelMapType *labelMap = i2l->GetOutput();
@@ -1112,7 +1114,7 @@ std::cout<<featureCalc->GetClusterShade();
     buf << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
     meas->insert(std::make_pair("region_number" , buf.str()));
     buf.str("");
-    buf << "3D region: " << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
+    buf << "3D connected region: " << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
     report->summary.push_back(buf.str());
 
     buf.str("");
@@ -1490,6 +1492,7 @@ int main(int argc, char *argv[]) {
     std::string seriesIdentifier;
     std::string PatientName("");
     std::string PatientID("");
+    std::string ReferringPhysician("");
 
     SeriesIdContainer runThese;
     if (seriesIdentifierFlag) { // If no optional series identifier
@@ -1612,6 +1615,9 @@ int main(int argc, char *argv[]) {
           }
           if (PatientID == "") {
             itk::ExposeMetaData<std::string>(dictionary, "0010|0020", PatientID);
+          }
+          if (ReferringPhysician == "") {
+            itk::ExposeMetaData<std::string>(dictionary, "0008|0090", ReferringPhysician);
           }
 
           if (uidFixedFlag) {
@@ -1868,8 +1874,6 @@ int main(int argc, char *argv[]) {
           report->SOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + endString;
         }
 
-
-
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
         int key_fact = 0;
@@ -1891,6 +1895,37 @@ int main(int argc, char *argv[]) {
 
         // add measures to json output
         resultJSON["measures"] = report->measures;
+
+        // produce a REDCap friendly output format for the measures
+        json redcap;
+        redcap["description"] = json::object();
+        for (int i = 0; i < report->measures.size(); i++) {
+          auto m = report->measures[i];
+          // go through all the entries in that map
+          for (std::map<std::string, std::string>::iterator iter = m.begin(); iter != m.end(); ++iter) {
+            std::string key = iter->first;
+            std::string value = iter->second;
+            redcap["description"][key] = json::object();
+            redcap["description"][key]["record_id"] = PatientID;
+            redcap["description"][key]["event_name"] = ReferringPhysician;
+            redcap["description"][key]["value"] = value;
+            redcap["description"][key]["field_name"] = key;
+          }
+        }
+
+        /*boost::filesystem::path redcap_out = output + boost::filesystem::path::preferred_separator + "redcap";
+        if (!itksys::SystemTools::FileIsDirectory(redcap_out.c_str())) {
+          create_directories(redcap_out.parent_path());
+        }*/
+        boost::filesystem::path output_out = output + boost::filesystem::path::preferred_separator + "redcap" + boost::filesystem::path::preferred_separator +
+                                             newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + "output.dcm";
+        if (!itksys::SystemTools::FileIsDirectory(output_out.parent_path().c_str())) {
+          create_directories(output_out.parent_path());
+        }
+        std::ofstream out2(output_out.c_str());
+        std::string res2 = redcap.dump(4) + "\n";
+        out2 << res2;
+        out2.close();
 
         // computational time
         boost::posix_time::ptime timeLocalEnd = boost::posix_time::microsec_clock::local_time();
