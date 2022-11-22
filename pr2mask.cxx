@@ -1897,19 +1897,21 @@ int main(int argc, char *argv[]) {
         resultJSON["measures"] = report->measures;
 
         // produce a REDCap friendly output format for the measures
-        json redcap;
-        redcap["description"] = json::object();
+        json redcap = json::array();
         for (int i = 0; i < report->measures.size(); i++) {
           auto m = report->measures[i];
           // go through all the entries in that map
           for (std::map<std::string, std::string>::iterator iter = m.begin(); iter != m.end(); ++iter) {
             std::string key = iter->first;
             std::string value = iter->second;
-            redcap["description"][key] = json::object();
-            redcap["description"][key]["record_id"] = PatientID;
-            redcap["description"][key]["event_name"] = ReferringPhysician;
-            redcap["description"][key]["value"] = value;
-            redcap["description"][key]["field_name"] = key;
+            json a = json::object();
+            a["record_id"] = PatientID;
+            a["redcap_event_name"] = ReferringPhysician;
+            a["value"] = value;
+            a["field_name"] = key;
+            a["redcap_repeat_instrument"] = "pr2mask";
+            a["redcap_repeat_instance"] = i;
+            redcap.push_back(a);
           }
         }
 
@@ -1918,7 +1920,7 @@ int main(int argc, char *argv[]) {
           create_directories(redcap_out.parent_path());
         }*/
         boost::filesystem::path output_out = output + boost::filesystem::path::preferred_separator + "redcap" + boost::filesystem::path::preferred_separator +
-                                             newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + "output.dcm";
+                                             newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + "output.json";
         if (!itksys::SystemTools::FileIsDirectory(output_out.parent_path().c_str())) {
           create_directories(output_out.parent_path());
         }
