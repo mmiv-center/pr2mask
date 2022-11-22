@@ -1906,11 +1906,16 @@ int main(int argc, char *argv[]) {
             std::string value = iter->second;
             json a = json::object();
             a["record_id"] = PatientID;
-            a["redcap_event_name"] = ReferringPhysician;
+            std::string ref = ReferringPhysician;
+            std::string startString("EventName:");
+            if (ref.find(startString) == 0) {
+              ref = ref.substr(startString.length());
+            }
+            a["redcap_event_name"] = ref;
             a["value"] = value;
             a["field_name"] = key;
             a["redcap_repeat_instrument"] = "pr2mask";
-            a["redcap_repeat_instance"] = i;
+            a["redcap_repeat_instance"] = std::to_string(i + 1); // start counting with 1 for redcap
             redcap.push_back(a);
           }
         }
