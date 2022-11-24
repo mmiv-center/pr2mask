@@ -269,10 +269,10 @@ void saveReport(Report *report) {
 
   int px = start_px;
   int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+  py = start_py;
 
   // write one line of text
   for (int line = 0; line < report->summary.size(); line++) {
-
     memset(image_buffer, 0, HEIGHT * WIDTH);
 
     // int lengths_min = placements[placement]["lengths"][0];
@@ -346,8 +346,6 @@ void saveReport(Report *report) {
         int newy = py + yi;
         int idx = newy * xmax + newx;
         if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
-          continue;
-        if (image_buffer[yi][xi] == 0)
           continue;
 
         // instead of blending we need to use a fixed overlay color

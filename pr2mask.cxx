@@ -46,6 +46,14 @@
 #include "itkConstantPadImageFilter.h"
 #include "itkShrinkImageFilter.h"
 
+#include "itkAddImageFilter.h"
+#include "itkCastImageFilter.h"
+#include "itkDenseFrequencyContainer2.h"
+#include "itkHistogramToTextureFeaturesFilter.h"
+#include "itkMultiplyImageFilter.h"
+#include "itkRegionOfInterestImageFilter.h"
+#include "itkScalarImageToCooccurrenceMatrixFilter.h"
+
 #include "itkGDCMImageIO.h"
 
 #include "itkMetaDataDictionary.h"
@@ -286,7 +294,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   redSIterator.GoToBegin();
   greenSIterator.GoToBegin();
   blueSIterator.GoToBegin();
-  float f = 0.6;
+  float f = 0.7;
   float red, green, blue;
   while (!inputIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
     float scaledP = ((float) inputIterator.Get() - t1) / (t2 - t1);
@@ -954,6 +962,120 @@ static inline std::vector<T> Quantile(const std::vector<U>& inData, const std::v
     return quantiles;
 }
 
+typedef itk::Image<unsigned short, 3> MaskImageType;
+typedef itk::Image<unsigned short, 3> ImageType3D;
+
+typedef itk::Image<float, 3> InternalImageType;
+// typedef itk::Image<unsigned char, 3> VisualizingImageType;
+typedef itk::Neighborhood<float, 3> NeighborhoodType;
+typedef itk::Statistics::DenseFrequencyContainer2 FrequencyContainerType;
+
+typedef itk::Statistics::ScalarImageToCooccurrenceMatrixFilter<ImageType3D> Image2CoOccuranceType;
+typedef Image2CoOccuranceType::HistogramType HistogramType;
+typedef itk::Statistics::HistogramToTextureFeaturesFilter<HistogramType> Hist2FeaturesType;
+typedef ImageType3D::OffsetType OffsetType;
+// typedef itk::AddImageFilter<InternalImageType> AddImageFilterType;
+// typedef itk::MultiplyImageFilter<InternalImageType> MultiplyImageFilterType;
+
+using LabelType = unsigned short;
+using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
+
+std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, ImageType3D::Pointer inputImage, ShapeLabelObjectType *labelObject,
+                                                           int pixelMinVal, int pixelMaxVal) {
+  // Gray Level Co-occurance Matrix Generator
+  Image2CoOccuranceType::Pointer glcmGenerator = Image2CoOccuranceType::New();
+  glcmGenerator->SetOffset(offset);
+
+  ImageType3D::Pointer mask = ImageType3D::New();
+  ImageType3D::RegionType maskRegion = inputImage->GetLargestPossibleRegion();
+  mask->SetRegions(maskRegion);
+  mask->Allocate();
+  mask->FillBuffer(itk::NumericTraits<PixelType>::Zero);
+  mask->SetOrigin(inputImage->GetOrigin());
+  mask->SetSpacing(inputImage->GetSpacing());
+  mask->SetDirection(inputImage->GetDirection());
+  for (unsigned int pixelID = 0; pixelID < labelObject->Size(); pixelID++) {
+    mask->SetPixel(labelObject->GetIndex(pixelID), 1);
+  }
+
+  glcmGenerator->SetMaskImage(mask);
+  // glcmGenerator->SetInsidePixelValue(1);  // default value for inside is 1 - so only if our mask has a single value this will work, if we have more label we
+  // need to do this for each label...
+
+  glcmGenerator->SetNumberOfBinsPerAxis(16);                    // reasonable number of bins
+  glcmGenerator->SetPixelValueMinMax(pixelMinVal, pixelMaxVal); // for input UCHAR pixel type (but we are using unsigned short with a max value of maybe 311)
+  Hist2FeaturesType::Pointer featureCalc = Hist2FeaturesType::New();
+  // Region Of Interest
+  typedef itk::RegionOfInterestImageFilter<ImageType3D, ImageType3D> roiType;
+  roiType::Pointer roi = roiType::New();
+  roi->SetInput(inputImage);
+
+  /*  InternalImageType::RegionType window;
+    InternalImageType::RegionType::SizeType size;
+    size.Fill(50);
+    window.SetSize(size);
+
+    window.SetIndex(0, 0);
+    window.SetIndex(1, 0);
+    window.SetIndex(2, 0);*/
+
+  // MaskImageType::RegionType maskRegion = maskImage->GetLargestPossibleRegion();
+  roi->SetRegionOfInterest(maskRegion);
+  roi->Update();
+
+  glcmGenerator->SetInput(roi->GetOutput());
+  glcmGenerator->Update();
+
+  featureCalc->SetInput(glcmGenerator->GetOutput());
+  featureCalc->Update();
+
+  std::stringstream buf;
+  std::map<std::string, std::string> results;
+  buf.str("");
+  buf << featureCalc->GetEntropy();
+  results.insert(std::pair<std::string, std::string>("tex_entropy", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetEnergy();
+  results.insert(std::pair<std::string, std::string>("tex_energy", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetCorrelation();
+  results.insert(std::pair<std::string, std::string>("tex_correlation", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetInertia();
+  results.insert(std::pair<std::string, std::string>("tex_inertia", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetHaralickCorrelation();
+  results.insert(std::pair<std::string, std::string>("tex_haralick_correlation", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetInverseDifferenceMoment();
+  results.insert(std::pair<std::string, std::string>("tex_inverse_difference_moment", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetClusterProminence();
+  results.insert(std::pair<std::string, std::string>("tex_cluster_prominence", buf.str()));
+
+  buf.str("");
+  buf << featureCalc->GetClusterShade();
+  results.insert(std::pair<std::string, std::string>("tex_cluster_shade", buf.str()));
+
+  /*  std::cout << "\n Entropy : ";
+    std::cout << featureCalc->GetEntropy() << "\n Energy";
+    std::cout << featureCalc->GetEnergy() << "\n Correlation";
+    std::cout << featureCalc->GetCorrelation() << "\n Inertia";
+    std::cout << featureCalc->GetInertia() << "\n HaralickCorrelation";
+    std::cout << featureCalc->GetHaralickCorrelation() << "\n InverseDifferenceMoment";
+    std::cout << featureCalc->GetInverseDifferenceMoment() << "\nClusterProminence";
+    std::cout << featureCalc->GetClusterProminence() << "\nClusterShade";
+    std::cout << featureCalc->GetClusterShade(); */
+
+  return results;
+}
+
 void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries) {
   typedef itk::GDCMSeriesFileNames NamesGeneratorType;
   NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
@@ -962,9 +1084,6 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   nameGenerator->AddSeriesRestriction("0008|0060");
   nameGenerator->SetRecursive(true);
   nameGenerator->SetDirectory(output_path);
-
-  typedef itk::Image<unsigned short, 3> MaskImageType;
-  typedef itk::Image<unsigned short, 3> ImageType3D;
 
   typedef std::vector<std::string> FileNamesContainer;
   FileNamesContainer fileNames;  // for the label series
@@ -1009,8 +1128,6 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   // we should read in the image series as well - we want to compute some biomarkers from that series
   ImageType3D::Pointer image = readerImage->GetOutput();
 
-  using LabelType = unsigned short;
-  using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
   using LabelMapType = itk::LabelMap<ShapeLabelObjectType>;
 
   MaskImageType::Pointer mask = reader->GetOutput();
@@ -1032,74 +1149,11 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   i2l->Update();
 
   LabelMapType *labelMap = i2l->GetOutput();
-  /*std::cout << "File "
-            << "\"" << labelSeries << "\""
-            << " has " << labelMap->GetNumberOfLabelObjects() << " labels." << std::endl; */
 
-  /* some more texture features:
-  
-//definitions of used types
-typedef itk::Image<float, 3> InternalImageType;
-typedef itk::Image<unsigned char, 3> VisualizingImageType;
-typedef itk::Neighborhood<float, 3> NeighborhoodType;
-typedef itk::Statistics::ScalarImageToCooccurrenceMatrixFilter<InternalImageType>
-Image2CoOccuranceType;
-typedef Image2CoOccuranceType::HistogramType HistogramType;
-typedef itk::Statistics::HistogramToTextureFeaturesFilter<HistogramType> Hist2FeaturesType;
-typedef InternalImageType::OffsetType OffsetType;
-typedef itk::AddImageFilter <InternalImageType> AddImageFilterType;
-typedef itk::MultiplyImageFilter<InternalImageType> MultiplyImageFilterType;
-
-void calcTextureFeatureImage (OffsetType offset, InternalImageType::Pointer inputImage)
-{
-// principal variables
-//Gray Level Co-occurance Matrix Generator
-Image2CoOccuranceType::Pointer glcmGenerator=Image2CoOccuranceType::New();
-glcmGenerator->SetOffset(offset);
-glcmGenerator->SetNumberOfBinsPerAxis(16); //reasonable number of bins
-glcmGenerator->SetPixelValueMinMax(0, 255); //for input UCHAR pixel type
-Hist2FeaturesType::Pointer featureCalc=Hist2FeaturesType::New();
-//Region Of Interest
-typedef itk::RegionOfInterestImageFilter<InternalImageType,InternalImageType> roiType;
-roiType::Pointer roi=roiType::New();
-roi->SetInput(inputImage);
-
-
-
-InternalImageType::RegionType window;
-InternalImageType::RegionType::SizeType size;
-size.Fill(50);
-window.SetSize(size);
-
-window.SetIndex(0,0);
-window.SetIndex(1,0);
-window.SetIndex(2,0);
-
-roi->SetRegionOfInterest(window);
-roi->Update();
-
-glcmGenerator->SetInput(roi->GetOutput());
-glcmGenerator->Update();
-
-featureCalc->SetInput(glcmGenerator->GetOutput());
-featureCalc->Update();
-
-std::cout<<"\n Entropy : ";
-std::cout<<featureCalc->GetEntropy()<<"\n Energy";
-std::cout<<featureCalc->GetEnergy()<<"\n Correlation";
-std::cout<<featureCalc->GetCorrelation()<<"\n Inertia";             
-std::cout<<featureCalc->GetInertia()<<"\n HaralickCorrelation";
-std::cout<<featureCalc->GetHaralickCorrelation()<<"\n InverseDifferenceMoment";
-std::cout<<featureCalc->GetInverseDifferenceMoment()<<"\nClusterProminence";
-std::cout<<featureCalc->GetClusterProminence()<<"\nClusterShade";
-std::cout<<featureCalc->GetClusterShade();
-}  
-  
-  
-  
-  
-  
-  */
+  NeighborhoodType neighborhood;
+  neighborhood.SetRadius(1); // 3x3x3
+  unsigned int centerIndex = neighborhood.GetCenterNeighborhoodIndex();
+  OffsetType offset;
 
   // Retrieve all attributes
   std::stringstream buf;
@@ -1110,128 +1164,131 @@ std::cout<<featureCalc->GetClusterShade();
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
 
     std::map<std::string, std::string> *meas = new std::map<std::string, std::string>();
+
     buf.str("");
     buf << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
-    meas->insert(std::make_pair("region_number" , buf.str()));
+    meas->insert(std::make_pair("region_number", buf.str()));
     buf.str("");
     buf << "3D connected region: " << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
     report->summary.push_back(buf.str());
+    // what image is this based on?
+    report->summary.push_back("image: " + imageSeries + ", label: " + labelSeries);
 
     buf.str("");
     buf << labelObject->GetBoundingBox();
-    meas->insert(std::make_pair("boundingbox" , buf.str()));
+    meas->insert(std::make_pair("boundingbox", buf.str()));
     buf.str(""); // clear the buffer
     buf << "    BoundingBox: " << labelObject->GetBoundingBox();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetNumberOfPixels();
-    meas->insert(std::make_pair("number_of_pixel" , buf.str()));
+    meas->insert(std::make_pair("number_of_pixel", buf.str()));
     buf.str("");
     buf << "    NumberOfPixels: " << labelObject->GetNumberOfPixels();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetPhysicalSize();
-    meas->insert(std::make_pair("physical_size" , buf.str()));
+    meas->insert(std::make_pair("physical_size", buf.str()));
     buf.str("");
     buf << "    PhysicalSize: " << labelObject->GetPhysicalSize();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetCentroid();
-    meas->insert(std::make_pair("centroid" , buf.str()));
+    meas->insert(std::make_pair("centroid", buf.str()));
     buf.str("");
     buf << "    Centroid: " << labelObject->GetCentroid();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetNumberOfPixelsOnBorder();
-    meas->insert(std::make_pair("pixel_on_border" , buf.str()));
+    meas->insert(std::make_pair("pixel_on_border", buf.str()));
     buf.str("");
     buf << "    NumberOfPixelsOnBorder: " << labelObject->GetNumberOfPixelsOnBorder();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetPerimeterOnBorder();
-    meas->insert(std::make_pair("perimeter_on_border" , buf.str()));
+    meas->insert(std::make_pair("perimeter_on_border", buf.str()));
     buf.str("");
     buf << "    PerimeterOnBorder: " << labelObject->GetPerimeterOnBorder();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetFeretDiameter();
-    meas->insert(std::make_pair("feret_diameter" , buf.str()));
+    meas->insert(std::make_pair("feret_diameter", buf.str()));
     buf.str("");
     buf << "    FeretDiameter: " << labelObject->GetFeretDiameter();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetPrincipalMoments();
-    meas->insert(std::make_pair("principal_moments" , buf.str()));
+    meas->insert(std::make_pair("principal_moments", buf.str()));
     buf.str("");
     buf << "    PrincipalMoments: " << labelObject->GetPrincipalMoments();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetPrincipalAxes();
-    meas->insert(std::make_pair("principal_axes" , buf.str()));
+    meas->insert(std::make_pair("principal_axes", buf.str()));
     buf.str("");
     buf << "    PrincipalAxes: " << labelObject->GetPrincipalAxes();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetElongation();
-    meas->insert(std::make_pair("elongation" , buf.str()));
+    meas->insert(std::make_pair("elongation", buf.str()));
     buf.str("");
     buf << "    Elongation: " << labelObject->GetElongation();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetPerimeter();
-    meas->insert(std::make_pair("perimeter" , buf.str()));
+    meas->insert(std::make_pair("perimeter", buf.str()));
     buf.str("");
     buf << "    Perimeter: " << labelObject->GetPerimeter();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetRoundness();
-    meas->insert(std::make_pair("roundness" , buf.str()));
+    meas->insert(std::make_pair("roundness", buf.str()));
     buf.str("");
     buf << "    Roundness: " << labelObject->GetRoundness();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetEquivalentSphericalRadius();
-    meas->insert(std::make_pair("equivalent_spherical_radius" , buf.str()));
+    meas->insert(std::make_pair("equivalent_spherical_radius", buf.str()));
     buf.str("");
     buf << "    EquivalentSphericalRadius: " << labelObject->GetEquivalentSphericalRadius();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetEquivalentSphericalPerimeter();
-    meas->insert(std::make_pair("equivalent_spherical_perimeter" , buf.str()));
+    meas->insert(std::make_pair("equivalent_spherical_perimeter", buf.str()));
     buf.str("");
     buf << "    EquivalentSphericalPerimeter: " << labelObject->GetEquivalentSphericalPerimeter();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetEquivalentEllipsoidDiameter();
-    meas->insert(std::make_pair("equivalent_ellipsoid_diameter" , buf.str()));
+    meas->insert(std::make_pair("equivalent_ellipsoid_diameter", buf.str()));
     buf.str("");
     buf << "    EquivalentEllipsoidDiameter: " << labelObject->GetEquivalentEllipsoidDiameter();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetFlatness();
-    meas->insert(std::make_pair("flatness" , buf.str()));
+    meas->insert(std::make_pair("flatness", buf.str()));
     buf.str("");
     buf << "    Flatness: " << labelObject->GetFlatness();
     report->summary.push_back(buf.str());
 
     buf.str("");
     buf << labelObject->GetPerimeterOnBorderRatio();
-    meas->insert(std::make_pair("perimeter_on_border_ratio" , buf.str()));
+    meas->insert(std::make_pair("perimeter_on_border_ratio", buf.str()));
     buf.str("");
     buf << "    PerimeterOnBorderRatio: " << labelObject->GetPerimeterOnBorderRatio();
     report->summary.push_back(buf.str());
@@ -1268,70 +1325,99 @@ std::cout<<featureCalc->GetClusterShade();
       float stdev = 0.0f;
       double sum2 = 0.0f;
       for (int i = 0; i < pixelValues.size(); i++) {
-        sum2 += (pixelValues[i]-imageMean)*(pixelValues[i]-imageMean);
+        sum2 += (pixelValues[i] - imageMean) * (pixelValues[i] - imageMean);
       }
-      sum2 /= (pixelValues.size()-1);
+      sum2 /= (pixelValues.size() - 1);
       stdev = std::sqrt(sum2);
 
       // compute the Q1 and Q3 as well
-      auto quartiles = Quantile<double, int>(pixelValues, { 0.25, 0.5, 0.75 });
+      auto quartiles = Quantile<double, int>(pixelValues, {0.25, 0.5, 0.75});
+
+      buf.str("");
+      buf << "    Intensity in region min: " << imageMin << ", q1: " << quartiles[0] << ", mean: " << imageMean << ", median: " << median
+          << ", q3: " << quartiles[2] << ", max: " << imageMax << ", stdev: " << stdev;
+      report->summary.push_back(buf.str());
 
       buf.str("");
       buf << quartiles[0];
-      meas->insert(std::make_pair("image_intensity_q1" , buf.str()));
-      buf.str("");
-      buf << "    Q1 intensity: " << quartiles[0];
-      report->summary.push_back(buf.str());
+      meas->insert(std::make_pair("image_intensity_q1", buf.str()));
+      // buf.str("");
+      // buf << "    Q1 intensity: " << quartiles[0];
+      // report->summary.push_back(buf.str());
 
       buf.str("");
       buf << quartiles[2];
-      meas->insert(std::make_pair("image_intensity_q3" , buf.str()));
-      buf.str("");
-      buf << "    Q3 intensity: " << quartiles[2];
-      report->summary.push_back(buf.str());
-
+      meas->insert(std::make_pair("image_intensity_q3", buf.str()));
+      // buf.str("");
+      // buf << "    Q3 intensity: " << quartiles[2];
+      // report->summary.push_back(buf.str());
 
       buf.str("");
       buf << stdev;
-      meas->insert(std::make_pair("image_intensity_stdev" , buf.str()));
-      buf.str("");
-      buf << "    Stdev intensity: " << stdev;
-      report->summary.push_back(buf.str());
+      meas->insert(std::make_pair("image_intensity_stdev", buf.str()));
+      // buf.str("");
+      // buf << "    Stdev intensity: " << stdev;
+      // report->summary.push_back(buf.str());
 
       buf.str("");
       buf << imageMin;
-      meas->insert(std::make_pair("image_intensity_min" , buf.str()));
-      buf.str("");
-      buf << "    Min intensity: " << imageMin;
-      report->summary.push_back(buf.str());
+      meas->insert(std::make_pair("image_intensity_min", buf.str()));
+      // buf.str("");
+      // buf << "    Min intensity: " << imageMin;
+      // report->summary.push_back(buf.str());
 
       buf.str("");
       buf << imageMax;
-      meas->insert(std::make_pair("image_intensity_max" , buf.str()));
-      buf.str("");
-      buf << "    Max intensity: " << imageMax;
-      report->summary.push_back(buf.str());
+      meas->insert(std::make_pair("image_intensity_max", buf.str()));
+      // buf.str("");
+      // buf << "    Max intensity: " << imageMax;
+      // report->summary.push_back(buf.str());
 
       buf.str("");
       buf << imageMean;
-      meas->insert(std::make_pair("image_intensity_mean" , buf.str()));
-      buf.str("");
-      buf << "    Mean intensity: " << (imageMean);
-      report->summary.push_back(buf.str());
+      meas->insert(std::make_pair("image_intensity_mean", buf.str()));
+      // buf.str("");
+      // buf << "    Mean intensity: " << (imageMean);
+      // report->summary.push_back(buf.str());
 
       buf.str("");
       buf << sum;
-      meas->insert(std::make_pair("image_intensity_sum" , buf.str()));   
+      meas->insert(std::make_pair("image_intensity_sum", buf.str()));
       buf.str("");
       buf << "    Sum intensity: " << (sum);
       report->summary.push_back(buf.str());
 
       buf.str("");
       buf << median;
-      meas->insert(std::make_pair("image_intensity_median" , buf.str()));
-      buf.str("");
-      buf << "    Median intensity: " << (median);
-      report->summary.push_back(buf.str());
+      meas->insert(std::make_pair("image_intensity_median", buf.str()));
+      // buf.str("");
+      // buf << "    Median intensity: " << (median);
+      // report->summary.push_back(buf.str());
+
+      // for this labelled object
+      for (unsigned int d = 0; d < centerIndex; d++) { // compute this for each d
+        offset = neighborhood.GetOffset(d);
+        std::map<std::string, std::string> textureFeatures = calcTextureFeatureImage(offset, image, labelObject, imageMin, imageMax);
+        // now add these features to the report
+        std::stringstream row;
+        row.str("");
+        row << "    ";
+        int counter = 0;
+        for (std::map<std::string, std::string>::iterator it = textureFeatures.begin(); it != textureFeatures.end(); ++it) {
+          std::stringstream key;
+          key << it->first << "_" << std::setfill('0') << std::setw(2) << d;
+          meas->insert(std::make_pair(key.str(), it->second));
+          row << key.str() << ": " << it->second << " ";
+          if ((counter + 1) % 4 == 0) {
+            report->summary.push_back(row.str());
+            row.str("");
+            row << "    ";
+          }
+          counter++;
+        }
+        if (row.str().size() > 4)
+          report->summary.push_back(row.str());
+      }
 
       report->measures.push_back(*meas);
     }
@@ -1851,7 +1937,7 @@ int main(int argc, char *argv[]) {
 
         // create a report for this series as well
         Report *report = getDefaultReportStruct();
-        report->summary = {{"Research PACS Report (MMIV)"}};
+        report->summary = {{"Research PACS Report " + to_simple_string(timeLocal)}};
         // report->summary.push_back(resultJSON["wall_time"]);
         report->StudyInstanceUID = StudyInstanceUID; // but use a new series and SOPInstanceUID generated by getDefaultReportStruct
         report->PatientName = PatientName;
@@ -1920,10 +2006,6 @@ int main(int argc, char *argv[]) {
           }
         }
 
-        /*boost::filesystem::path redcap_out = output + boost::filesystem::path::preferred_separator + "redcap";
-        if (!itksys::SystemTools::FileIsDirectory(redcap_out.c_str())) {
-          create_directories(redcap_out.parent_path());
-        }*/
         boost::filesystem::path output_out = output + boost::filesystem::path::preferred_separator + "redcap" + boost::filesystem::path::preferred_separator +
                                              newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + "output.json";
         if (!itksys::SystemTools::FileIsDirectory(output_out.parent_path().c_str())) {
