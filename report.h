@@ -18,6 +18,8 @@ typedef struct {
   std::string StudyID; // 16 chars max
   std::string AccessionNumber;
   std::string SeriesDescription;
+  std::string StudyDate;
+  std::string StudyTime;
   std::string key_fact;
   std::string key_unit;
   std::vector<std::string> summary;

@@ -61,7 +61,9 @@ Report *getDefaultReportStruct() {
   }
 
   report->SeriesDescription = std::string("Report");
-  report->measures = std::vector< std::map<std::string, std::string> >();
+  report->StudyDate = std::string("");
+  report->StudyTime = std::string("");
+  report->measures = std::vector<std::map<std::string, std::string>>();
   report->key_fact = std::string("");
   report->key_unit = std::string("");
   return report;
@@ -540,6 +542,8 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
   anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
   anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
+  anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
+  anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
 
   im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(uint8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);
