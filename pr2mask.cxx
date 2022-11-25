@@ -597,6 +597,10 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     // std::cout << *dir << "\n";  // full path
     // std::cout << dir->path().filename() << "\n"; // just last bit
     std::string filename = dir->path().string();
+    // this could be a folder ... don't try to read folders as files
+    if (boost::filesystem::is_directory(dir->path())) {
+      continue; // ignore
+    }
 
     // Instantiate the reader:
     gdcm::Reader reader;
@@ -839,7 +843,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
       }
     } else {
       if (verbose)
-        fprintf(stdout, "not sequence?\n");
+        fprintf(stdout, "Warning: no GraphicAnnotationSequence (0070,0001) in this file\n");
     }
   }
 
