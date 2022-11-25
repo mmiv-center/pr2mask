@@ -1583,6 +1583,8 @@ int main(int argc, char *argv[]) {
     std::string StudyDate("");
     std::string StudyTime("");
     std::string ReferringPhysician("");
+    std::string AccessionNumber("");
+    std::string StudyID("");
 
     SeriesIdContainer runThese;
     if (seriesIdentifierFlag) { // If no optional series identifier
@@ -1713,6 +1715,12 @@ int main(int argc, char *argv[]) {
           }
           if (StudyTime == "") {
             itk::ExposeMetaData<std::string>(dictionary, "0008|0030", StudyTime);
+          }
+          if (AccessionNumber == "") {
+            itk::ExposeMetaData<std::string>(dictionary, "0008|0050", AccessionNumber);
+          }
+          if (StudyID == "") {
+            itk::ExposeMetaData<std::string>(dictionary, "0020|0010", StudyID);
           }
 
           if (uidFixedFlag) {
@@ -1956,6 +1964,8 @@ int main(int argc, char *argv[]) {
         report->PatientID = PatientID;
         report->StudyDate = StudyDate;
         report->StudyTime = StudyTime;
+        report->AccessionNumber = AccessionNumber;
+        report->StudyID = StudyID;
         report->SeriesDescription = seriesDescription + " (report)";
         report->ReferringPhysician = ReferringPhysician;
 
