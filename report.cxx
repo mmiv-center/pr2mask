@@ -16,6 +16,8 @@
 #include <gdcmImage.h>
 #include <math.h>
 
+#include <boost/date_time.hpp>
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -523,6 +525,7 @@ void saveReport(Report *report) {
   gdcm::File *filePtr = new gdcm::File;
   gdcm::Anonymizer anon;
   anon.SetFile(*filePtr);
+  anon.Replace(gdcm::Tag(0x0008, 0x0008), "DERIVED\\SECONDARY\\OTHER"); // ImageType
   anon.Replace(gdcm::Tag(0x0028, 0x0002), "1");            // SamplesperPixel
   anon.Replace(gdcm::Tag(0x0028, 0x0004), "MONOCHROME2");  // PhotometricInterpretation
   anon.Replace(gdcm::Tag(0x0028, 0x0010), std::to_string(HEIGHT).c_str());         // Rows
@@ -541,9 +544,25 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
   anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
   anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
-  anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
+  anon.Replace(gdcm::Tag(0x0008, 0x0090), report->ReferringPhysician.c_str());
+  //  anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
   anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
   anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
+  anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
+
+  anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(1).c_str()); // InstanceNumber
+  anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
+
+  boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
+  std::string DateOfSecondaryCapture =
+      std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
+  std::string TimeOfSecondaryCapture =
+      std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
+
+  anon.Replace(gdcm::Tag(0x0018, 0x1012), DateOfSecondaryCapture.c_str());
+  anon.Replace(gdcm::Tag(0x0018, 0x1014), TimeOfSecondaryCapture.c_str());
+  anon.Replace(gdcm::Tag(0x0018, 0x1016), std::string("pr2mask").c_str());
+  anon.Replace(gdcm::Tag(0x0020, 0x4000), std::string("Region of interest shape, intensity and texture measures").c_str());
 
   im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(uint8_t));
   im->GetPixelFormat().SetSamplesPerPixel(1);

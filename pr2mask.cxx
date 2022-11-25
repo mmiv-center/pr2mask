@@ -1672,7 +1672,6 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|000e", SeriesInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
-          itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription);
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
 
           // make a copy of this image series in the output/images/ folder
@@ -1953,6 +1952,7 @@ int main(int argc, char *argv[]) {
         report->StudyDate = StudyDate;
         report->StudyTime = StudyTime;
         report->SeriesDescription = seriesDescription + " (report)";
+        report->ReferringPhysician = ReferringPhysician;
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
         if (uidFixedFlag) {
