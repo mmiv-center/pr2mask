@@ -871,7 +871,9 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
     InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
     using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
     InputFilterType::Pointer filter = InputFilterType::New();
-
+    // tolerance as 1/10 of a voxel, does this do something?
+    double tol = std::min(im2change->GetSpacing()[2], std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1])) / 10.0;
+    filter->SetCoordinateTolerance(tol);
     int storageIdx = polyIds[p]; // we just use the first one
 
     using VertexType = InputPolylineType::VertexType;
@@ -1900,6 +1902,9 @@ int main(int argc, char *argv[]) {
             seriesDescription += " ";
           std::string newSeriesDescription = seriesDescription + "(mask)";
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|103e", newSeriesDescription.substr(0, 64));
+          // set window center and window width
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1050", std::to_string(0.5));
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1051", std::to_string(1));
 
           w->SetInput(im2change);
           // create the output filename
