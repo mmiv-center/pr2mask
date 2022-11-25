@@ -1972,16 +1972,16 @@ int main(int argc, char *argv[]) {
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
         if (uidFixedFlag) {
           std::string derivedSeriesInstanceUID(seriesIdentifier);
-          std::string endString = ".3";
-          if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".3")
-            endString = ".4";
+          std::string endString = ".7";
+          if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".7")
+            endString = ".8";
           // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
           derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
           report->SeriesInstanceUID = derivedSeriesInstanceUID;
 
           std::string newSOPInstanceUID = SOPInstanceUID;
-          if (newSOPInstanceUID.substr(newSOPInstanceUID.size() - 2, 2) == ".3")
-            endString = ".4";
+          if (newSOPInstanceUID.substr(newSOPInstanceUID.size() - 2, 2) == ".7")
+            endString = ".8";
           report->SOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + endString;
         }
 
