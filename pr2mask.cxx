@@ -665,7 +665,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     seriesinstanceuidAttr.Set(ds);
     SeriesInstanceUID = seriesinstanceuidAttr.GetValue();
     if (verbose) {
-      fprintf(stdout, " found SeriesInstanceUID: %s\n", SeriesInstanceUID.c_str());
+      fprintf(stdout, " \033[0;32mfound\033[0m SeriesInstanceUID [%s]: \033[0;33m%s\033[0m\n", modalityAttr.GetValue().c_str(), SeriesInstanceUID.c_str());
     }
     const gdcm::DataElement &de = ds.GetDataElement(gdcm::Tag(0x0070, 0x0001));
     // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
@@ -716,7 +716,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           continue;
         } else {
           if (verbose)
-            fprintf(stdout, " [item %d] found a ReferencedImageSequence\n", itemNr);
+            fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a ReferencedImageSequence\n", itemNr);
         }
         const gdcm::DataElement &de3 = subds.GetDataElement(referencedImageSequence);
         gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
@@ -734,7 +734,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           const gdcm::ByteValue *bv = deReferencedSOPInstanceUID.GetByteValue();
           std::string refUID(bv->GetPointer(), bv->GetLength());
           if (verbose)
-            fprintf(stdout, " found: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
+            fprintf(stdout, " \033[0;32mfound\033[0m: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
           poly.ReferencedSOPInstanceUID = boost::algorithm::trim_copy(refUID);
           // the string above might contain a utf-8 version of a null character
           if (poly.ReferencedSOPInstanceUID.back() == '\0')
@@ -762,7 +762,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           gdcm::SmartPointer<gdcm::SequenceOfItems> sqiTextObjectSequence = de2.GetValueAsSQ();
           gdcm::SequenceOfItems::SizeType nitems2 = sqiTextObjectSequence->GetNumberOfItems();
           if (verbose)
-            fprintf(stdout, " unformatted text object sequence with %lu item(-s)\n", nitems2);
+            fprintf(stdout, " unformatted text object sequence with %lu item%s\n", nitems2, nitems2>1?"s":"");
           for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
             gdcm::Item &item2 = sqiTextObjectSequence->GetItem(itemNr2);
             gdcm::DataSet &subds2 = item2.GetNestedDataSet();
@@ -785,13 +785,13 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           // fprintf(stdout, " %d does not have GraphicObjectSequence\n", itemNr);
           continue;
         } else {
-          // fprintf(stdout, " %d found a GraphicObjectSequence\n", itemNr);
+          // fprintf(stdout, " %d \033[0;32mfound\033[0m a GraphicObjectSequence\n", itemNr);
         }
         const gdcm::DataElement &de2 = subds.GetDataElement(graphicObjectSequence);
         gdcm::SmartPointer<gdcm::SequenceOfItems> sqiGraphicObjectSequence = de2.GetValueAsSQ();
         gdcm::SequenceOfItems::SizeType nitems2 = sqiGraphicObjectSequence->GetNumberOfItems();
         if (verbose)
-          fprintf(stdout, " graphic object sequence with %lu item(-s)\n", nitems2);
+          fprintf(stdout, " graphic object sequence with %lu item%s\n", nitems2, nitems2>1?"s":"");
         for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
           gdcm::Item &item2 = sqiGraphicObjectSequence->GetItem(itemNr2);
           gdcm::DataSet &subds2 = item2.GetNestedDataSet();
@@ -843,7 +843,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
       }
     } else {
       if (verbose)
-        fprintf(stdout, "Warning: no GraphicAnnotationSequence (0070,0001) in this file\n");
+        fprintf(stdout, "\033[0;31mWarning\033[0m: no GraphicAnnotationSequence (0070,0001) in %s\n", filename.c_str());
     }
   }
 
@@ -1500,7 +1500,7 @@ int main(int argc, char *argv[]) {
   std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
   parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID, verbose);
   if (storage.size() == 0) {
-    fprintf(stderr, "Error: No presentation state (PS) files found that contain polylines.\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: No presentation state (PS) files found that contain polylines.\n");
     exit(-1);
   }
 
@@ -1519,14 +1519,14 @@ int main(int argc, char *argv[]) {
       }
     }
     if (!found && verbose) {
-      fprintf(stderr, "Warning: Unknown MR (SOPInstanceUID): \"%s\" referenced in \"%s\"\n", storage[i].ReferencedSOPInstanceUID.c_str(),
+      fprintf(stderr, "\033[0;31mWarning\033[0m: Unknown MR (SOPInstanceUID): \"%s\" referenced in \"%s\"\n", storage[i].ReferencedSOPInstanceUID.c_str(),
               storage[i].Filename.c_str());
     }
   }
   if (verbose)
     fprintf(stdout, "We could identify the referenced series for %d/%lu polylines.\n", goodStorage, storage.size());
   if (goodStorage == 0) {
-    fprintf(stderr, "Error: None of the presentation state files contained a polyline referencing a known MRI file.\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: None of the presentation state files contained a polyline referencing a known MRI file.\n");
     exit(-1);
   }
 

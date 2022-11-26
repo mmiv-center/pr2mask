@@ -112,7 +112,7 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   error = FT_Init_FreeType(&library); /* initialize library */
 
   if (error != 0) {
-    fprintf(stderr, "Error: The freetype library could not be initialized with this font.\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
     return;
   }
 
@@ -139,7 +139,7 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
 
   if (face == NULL) {
-    fprintf(stderr, "Error: no face found, provide the filename of a ttf file...\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
     return;
   }
 
@@ -147,7 +147,7 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
   /* error handling omitted */
   if (error != 0) {
-    fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+    fprintf(stderr, "\033[0;31mError\033[0;31m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
     return;
   }
 
@@ -230,7 +230,7 @@ void saveReport(Report *report) {
     font_file = std::string(env_p);
   }
   if (!boost::filesystem::exists(font_file)) {
-    fprintf(stderr, "Error: no font provided. Set the environment variable REPORT_FONT_PATH to the location of a ttf file.\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: no font provided. Set the environment variable REPORT_FONT_PATH to the location of a ttf file.\n");
     return;
   }
 
@@ -259,7 +259,7 @@ void saveReport(Report *report) {
   error = FT_Init_FreeType(&library); /* initialize library */
 
   if (error != 0) {
-    fprintf(stderr, "Error: The freetype library could not be initialized with this font.\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
     return;
   }
 
@@ -289,7 +289,7 @@ void saveReport(Report *report) {
     error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
 
     if (face == NULL) {
-      fprintf(stderr, "Error: no face found, provide the filename of a ttf file...\n");
+      fprintf(stderr, "\033[0mError\033[0m: no face found, provide the filename of a ttf file...\n");
       return;
     }
 
@@ -298,7 +298,7 @@ void saveReport(Report *report) {
     error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
     /* error handling omitted */
     if (error != 0) {
-      fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+      fprintf(stderr, "\033[0;31mError\033[0m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
       return;
     }
 
@@ -395,7 +395,7 @@ void saveReport(Report *report) {
     error = FT_Init_FreeType(&library);
 
     if (error != 0) {
-      fprintf(stderr, "Error: The freetype library could not be initialized with this font.\n");
+      fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
       return;
     }
 
@@ -420,14 +420,14 @@ void saveReport(Report *report) {
     error = FT_New_Face(library, font_file.c_str(), face_index, &face);
 
     if (face == NULL) {
-      fprintf(stderr, "Error: no face found, provide the filename of a ttf file...\n");
+      fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
       return;
     }
 
     int font_size_in_pixel = 36;
     error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0);
     if (error != 0) {
-      fprintf(stderr, "Error: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+      fprintf(stderr, "\033[0;31mError\033[0m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
       return;
     }
 
