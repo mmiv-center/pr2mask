@@ -1448,9 +1448,11 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetVersion("0.0.3");
+  std::string versionString = std::string("0.0.3.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  command.SetVersion(versionString.c_str());
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");
+  command.SetCategory("image conversion");
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
   command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM. The redcap/ folder contains series folders with output.json files for REDCap imports.", MetaCommand::STRING, true);
 
