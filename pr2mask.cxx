@@ -589,6 +589,9 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   return;
 }
 
+bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
+void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
+
 bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map<std::string, std::string> *SOPInstanceUID2SeriesInstanceUID, bool verbose) {
   // read from input and create polygon structs in storage
   // a local cache of the Series that might be referenced
@@ -762,7 +765,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           gdcm::SmartPointer<gdcm::SequenceOfItems> sqiTextObjectSequence = de2.GetValueAsSQ();
           gdcm::SequenceOfItems::SizeType nitems2 = sqiTextObjectSequence->GetNumberOfItems();
           if (verbose)
-            fprintf(stdout, " unformatted text object sequence with %lu item%s\n", nitems2, nitems2>1?"s":"");
+            fprintf(stdout, " unformatted text object sequence with %lu item%s\n", nitems2, nitems2!=1?"s":"");
           for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
             gdcm::Item &item2 = sqiTextObjectSequence->GetItem(itemNr2);
             gdcm::DataSet &subds2 = item2.GetNestedDataSet();
@@ -791,7 +794,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
         gdcm::SmartPointer<gdcm::SequenceOfItems> sqiGraphicObjectSequence = de2.GetValueAsSQ();
         gdcm::SequenceOfItems::SizeType nitems2 = sqiGraphicObjectSequence->GetNumberOfItems();
         if (verbose)
-          fprintf(stdout, " graphic object sequence with %lu item%s\n", nitems2, nitems2>1?"s":"");
+          fprintf(stdout, " graphic object sequence with %lu item%s\n", nitems2, nitems2!=1?"s":"");
         for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
           gdcm::Item &item2 = sqiGraphicObjectSequence->GetItem(itemNr2);
           gdcm::DataSet &subds2 = item2.GetNestedDataSet();
@@ -839,6 +842,11 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           }
           // now store the poly
           storage->push_back(poly);
+          if (verbose) {
+            std::string utv = poly.UnformattedTextValue;
+            stripUnicode(utv);
+            fprintf(stdout, " added poly with %lu points (\"%s\")\n", poly.coords.size(), utv.c_str());
+          }
         }
       }
     } else {
@@ -1430,9 +1438,6 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   }
 }
 
-bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
-void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
-
 int main(int argc, char *argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
 
@@ -1443,11 +1448,11 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetVersion("0.0.2");
+  command.SetVersion("0.0.3");
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
-  command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM.", MetaCommand::STRING, true);
+  command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM. The redcap/ folder contains series folders with output.json files for REDCap imports.", MetaCommand::STRING, true);
 
   command.SetOption("SeriesName", "n", false, "Select series by series name (if more than one series is present).");
   command.SetOptionLongTag("SeriesName", "seriesname");
@@ -1500,7 +1505,7 @@ int main(int argc, char *argv[]) {
   std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
   parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID, verbose);
   if (storage.size() == 0) {
-    fprintf(stderr, "\033[0;31mError\033[0m: No presentation state (PS) files found that contain polylines.\n");
+    fprintf(stderr, "\033[0;31mError\033[0m: No presentation state [PS] files found that contain polylines.\n");
     exit(-1);
   }
 
@@ -1519,7 +1524,7 @@ int main(int argc, char *argv[]) {
       }
     }
     if (!found && verbose) {
-      fprintf(stderr, "\033[0;31mWarning\033[0m: Unknown MR (SOPInstanceUID): \"%s\" referenced in \"%s\"\n", storage[i].ReferencedSOPInstanceUID.c_str(),
+      fprintf(stderr, "\033[0;31mWarning\033[0m: Unknown SOPInstanceUID: \"%s\" in\n         %s\n", storage[i].ReferencedSOPInstanceUID.c_str(),
               storage[i].Filename.c_str());
     }
   }
