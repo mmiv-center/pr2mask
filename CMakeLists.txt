@@ -55,7 +55,7 @@ ENDIF()
 find_package(Freetype REQUIRED)
 
 # target_link_libraries(your_target ${Boost_LIBRARIES})
-add_executable(pr2mask pr2mask.cxx report.h report.cxx)
+add_executable(pr2mask pr2mask.cxx report.h report.cxx itkPolylineMask2DScanlineImageFilter.hxx)
 target_include_directories(pr2mask PUBLIC ${FREETYPE_INCLUDE_DIRS})
 target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES})
 target_compile_features(pr2mask PRIVATE cxx_std_11)

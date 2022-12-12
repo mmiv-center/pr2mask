@@ -15,6 +15,7 @@
 #include "itkMinimumMaximumImageCalculator.h"
 #include "itkPolyLineParametricPath.h"
 #include "itkPolylineMask2DImageFilter.h"
+#include "itkPolylineMask2DScanlineImageFilter.h"
 #include "itkRGBPixel.h"
 #include "itkScalarImageToHistogramGenerator.h"
 
@@ -881,7 +882,7 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
 
     using InputPolylineType = itk::PolyLineParametricPath<2>;
     InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
-    using InputFilterType = itk::PolylineMask2DImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
+    using InputFilterType = itk::PolylineMask2DScanlineImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
     InputFilterType::Pointer filter = InputFilterType::New();
     // tolerance as 1/10 of a voxel, does this do something?
     double tol = std::min(im2change->GetSpacing()[2], std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1])) / 10.0;
