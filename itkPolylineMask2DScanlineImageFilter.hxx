@@ -82,7 +82,7 @@ int orientation(_Point2D p, _Point2D q, _Point2D r) {
   if (std::abs(val) < 1e-6)
     return 0; // collinear
 
-  return (val > 0) ? 1 : 2; // clock or counterclock wise
+  return (val > 0) ? 1 : 2; // clock or counter clockwise
 }
 
 // The main function that returns true if line segment 'p1q1'
@@ -243,7 +243,7 @@ void PolylineMask2DScanlineImageFilter<TInputImage, TPolyline, TOutputImage>::Ge
     PT floatIndexA;
     outputImagePtr->TransformIndexToPhysicalPoint(indexA, floatIndexA); // hope that is in the middle of the pixel now
     floatIndexA[0] -= halfAPixelDirX;                                   // half a pixel in x direction
-    floatIndexA[1] -= 1e-4;                                             // prevent intersections at end points
+    floatIndexA[1] -= halfAPixelDirY / 4;                               // prevent intersections at end points
     // fprintf(stderr, " POINT TO FLOAT: %ld %ld %f %f\n", indexA[0], indexA[1], floatIndexA[0], floatIndexA[1]);
     //  auto indexA2 = outputImagePtr->TransformPhysicalPointToContinuousIndex(tmpVertex);
     ++imitLine;

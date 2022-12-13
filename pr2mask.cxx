@@ -85,6 +85,8 @@ struct Polygon {
   std::string SeriesInstanceUID;
   std::string UnformattedTextValue;
   std::string Filename; // the name of the DICOM file
+  std::string PatientName;
+  std::string PatientID;
 };
 
 using ImageType2D = itk::Image<PixelType, 2>;
@@ -627,6 +629,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     std::string StudyInstanceUID;
     std::string SOPInstanceUID;
     std::string Modality;
+    std::string PatientID;
+    std::string PatientName;
 
     const gdcm::Tag graphicType(0x0070, 0x0023);              // GraphicType
     const gdcm::Tag numberOfGraphicPoints(0x0070, 0x0021);    // NumberOfGraphicPoints
@@ -657,6 +661,15 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
       SOPInstanceUID2SeriesInstanceUID->insert(std::pair<std::string, std::string>(SOPInstanceUID, SeriesInstanceUID));
       continue;
     }
+
+    // get the PatientID and PatientName
+    gdcm::Attribute<0x0010, 0x0020> patientIDAttr;
+    patientIDAttr.Set(ds);
+    PatientID = patientIDAttr.GetValue();
+
+    gdcm::Attribute<0x0010, 0x0010> patientNameAttr;
+    patientNameAttr.Set(ds);
+    PatientName = patientNameAttr.GetValue();
 
     // get the StudyInstanceUID
     gdcm::Attribute<0x0020, 0x000D> studyinstanceuidAttr;
@@ -702,6 +715,12 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
         if (poly.SeriesInstanceUID.back() == '\0')
           poly.SeriesInstanceUID.replace(poly.SeriesInstanceUID.end() - 1, poly.SeriesInstanceUID.end(), "");
         poly.Filename = filename;
+        poly.PatientID = PatientID;
+        if (poly.StudyInstanceUID.back() == '\0')
+          poly.PatientID.replace(poly.PatientID.end() - 1, poly.PatientID.end(), "");
+        poly.PatientName = PatientName;
+        if (poly.PatientName.back() == '\0')
+          poly.PatientName.replace(poly.PatientName.end() - 1, poly.PatientName.end(), "");
 
         gdcm::Item &item = sqi->GetItem(itemNr);
         gdcm::DataSet &subds = item.GetNestedDataSet();
@@ -1650,6 +1669,15 @@ int main(int argc, char *argv[]) {
 
         // remember the last SOPInstanceUID from the list of images
         std::string SOPInstanceUID;
+
+        // we need to reset some attributes because they are stack specific
+        PatientName = "";
+        PatientID = "";
+        ReferringPhysician = "";
+        StudyDate = "";
+        StudyTime = "";
+        AccessionNumber = "";
+        StudyID = "";
 
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
