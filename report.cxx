@@ -506,7 +506,7 @@ void saveReport(Report *report) {
   }
 
   gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
-  pixeldata.SetByteValue(buffer, len);
+  pixeldata.SetByteValue(buffer, WIDTH * HEIGHT * 8);
 
   gdcm::SmartPointer<gdcm::Image> im = new gdcm::Image;
   im->SetNumberOfDimensions(2);
@@ -555,10 +555,14 @@ void saveReport(Report *report) {
   anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
 
   boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
-  std::string DateOfSecondaryCapture =
-      std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
-  std::string TimeOfSecondaryCapture =
-      std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
+  char dateOfReport[9];
+  snprintf(dateOfReport, 9, "%04s%02d%02d", timeLocal.date().year(), timeLocal.date().month(), timeLocal.date().day());
+  std::string DateOfSecondaryCapture = std::string(dateOfReport);
+  // std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
+  char timeOfReport[7];
+  snprintf(timeOfReport, 7, "%02d%02d%02d", timeLocal.time_of_day().hours(), timeLocal.time_of_day().minutes(), timeLocal.time_of_day().seconds());
+  std::string TimeOfSecondaryCapture = std::string(timeOfReport);
+  //    std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
 
   anon.Replace(gdcm::Tag(0x0018, 0x1012), DateOfSecondaryCapture.c_str());
   anon.Replace(gdcm::Tag(0x0018, 0x1014), TimeOfSecondaryCapture.c_str());
