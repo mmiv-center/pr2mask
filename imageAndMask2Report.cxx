@@ -75,7 +75,7 @@ json resultJSON;
 using ImageType2D = itk::Image<PixelType, 2>;
 using MaskImageType2D = itk::Image<PixelType, 2>;
 
-void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
+void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
                            std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose) {
 
   typedef itk::ImageFileReader<ImageType2D> ReaderType;
@@ -1203,6 +1203,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Processing mask series: " << std::endl;
         std::cout << "  " << maskSeriesIdentifier << std::endl;
       }
+      fflush(stdout);
 
       maskFileNames = maskNameGenerator->GetFileNames(maskSeriesIdentifier);
 
@@ -1449,7 +1450,7 @@ int main(int argc, char *argv[]) {
           ImageType2D::RegionType region;
           region = im2change->GetBufferedRegion();
           ImageType2D::SizeType size = region.GetSize();
-          // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
+          std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
 
           ImageType2D::PixelContainer *container;
           container = im2change->GetPixelContainer();
@@ -1458,25 +1459,19 @@ int main(int argc, char *argv[]) {
           ImageType2D::PixelType *buffer2 = container->GetBufferPointer();
 
           ImageType2D::Pointer nImage;
-          //if (polyIds.size() > 0) {
-            // nImage = filter->GetOutput();
+          MaskSliceImageType::PixelContainer *container2 = maskImage->GetPixelContainer();
+          MaskSliceImageType::PixelType *buffer3 = container2->GetBufferPointer();
 
-            // ImageType2D::Pointer nImage = filter->GetOutput();
-            MaskSliceImageType::PixelContainer *container2;
-            container2 = maskImage->GetPixelContainer();
-            MaskSliceImageType::PixelType *buffer3 = container2->GetBufferPointer();
-
-            // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
-            // that have been selected before (air in intestines for example).
-            // buffer2 is destination, buffer3 is source (mask)
-            memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
-            // We can clean the data (remove all other label).
-            /*for (int k = 0; k < size[0] * size[1]; k++) {
-              if (buffer2[k] > 3) {
-                buffer2[k] = 0; // set to background
-              }
-            }*/
-          //}
+          // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
+          // that have been selected before (air in intestines for example).
+          // buffer2 is destination, buffer3 is source (mask)
+          memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
+          // We can clean the data (remove all other label).
+          /*for (int k = 0; k < size[0] * size[1]; k++) {
+            if (buffer2[k] > 3) {
+              buffer2[k] = 0; // set to background
+            }
+          }*/
 
           // dilate and erode the im2change (mask) (would be better if we do this in 3D)
           using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
