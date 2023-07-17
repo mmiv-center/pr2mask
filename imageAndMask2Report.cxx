@@ -590,8 +590,8 @@ static inline std::vector<T> Quantile(const std::vector<U>& inData, const std::v
     return quantiles;
 }
 
-typedef itk::Image<unsigned short, 3> MaskImageType;
-typedef itk::Image<unsigned short, 3> ImageType3D;
+typedef itk::Image<PixelType, 3> MaskImageType;
+typedef itk::Image<PixelType, 3> ImageType3D;
 
 typedef itk::Image<float, 3> InternalImageType;
 // typedef itk::Image<unsigned char, 3> VisualizingImageType;
@@ -605,7 +605,7 @@ typedef ImageType3D::OffsetType OffsetType;
 // typedef itk::AddImageFilter<InternalImageType> AddImageFilterType;
 // typedef itk::MultiplyImageFilter<InternalImageType> MultiplyImageFilterType;
 
-using LabelType = unsigned short;
+using LabelType = PixelType;
 using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
 
 std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, ImageType3D::Pointer inputImage, ShapeLabelObjectType *labelObject,
@@ -1148,68 +1148,69 @@ int main(int argc, char *argv[]) {
 
   //
   // READ the mask image into an array of slices
-  // 
-  typedef itk::ImageSeriesReader<ImageType> MaskReaderType;
-  MaskReaderType::Pointer maskReader = MaskReaderType::New();
+  //
+  if (0) {
+    typedef itk::ImageSeriesReader<ImageType> MaskReaderType;
+    MaskReaderType::Pointer maskReader = MaskReaderType::New();
 
-  std::vector<MaskImageType2D::Pointer> maskSlices;
+    std::vector<MaskImageType2D::Pointer> maskSlices;
 
-  typedef itk::GDCMImageIO ImageIOType;
-  ImageIOType::Pointer dicomIOMaskStack = ImageIOType::New();
-  dicomIOMaskStack->LoadPrivateTagsOn();
-  dicomIOMaskStack->KeepOriginalUIDOn();
+    typedef itk::GDCMImageIO ImageIOType;
+    ImageIOType::Pointer dicomIOMaskStack = ImageIOType::New();
+    dicomIOMaskStack->LoadPrivateTagsOn();
+    dicomIOMaskStack->KeepOriginalUIDOn();
 
-  maskReader->SetImageIO(dicomIOMaskStack);
+    maskReader->SetImageIO(dicomIOMaskStack);
 
-  typedef itk::GDCMSeriesFileNames MaskNamesGeneratorType;
-  MaskNamesGeneratorType::Pointer maskNameGenerator = MaskNamesGeneratorType::New();
+    typedef itk::GDCMSeriesFileNames MaskNamesGeneratorType;
+    MaskNamesGeneratorType::Pointer maskNameGenerator = MaskNamesGeneratorType::New();
 
-  maskNameGenerator->SetUseSeriesDetails(false); // we want to use the keys as SeriesInstanceUIDs
-  maskNameGenerator->AddSeriesRestriction("0008|0060");
-  maskNameGenerator->SetRecursive(true);
-  maskNameGenerator->SetDirectory(mask);
+    maskNameGenerator->SetUseSeriesDetails(false); // we want to use the keys as SeriesInstanceUIDs
+    maskNameGenerator->AddSeriesRestriction("0008|0060");
+    maskNameGenerator->SetRecursive(true);
+    maskNameGenerator->SetDirectory(mask);
 
-  typedef std::vector<std::string> MaskFileNamesContainer;
-  MaskFileNamesContainer maskFileNames;
+    typedef std::vector<std::string> MaskFileNamesContainer;
+    MaskFileNamesContainer maskFileNames;
 
-  try {
-    typedef std::vector<std::string> SeriesIdContainer;
+    try {
+      typedef std::vector<std::string> SeriesIdContainer;
 
-    const SeriesIdContainer &seriesUID = maskNameGenerator->GetSeriesUIDs();
+      const SeriesIdContainer &seriesUID = maskNameGenerator->GetSeriesUIDs();
 
-    SeriesIdContainer::const_iterator seriesItr = seriesUID.begin();
-    SeriesIdContainer::const_iterator seriesEnd = seriesUID.end();
+      SeriesIdContainer::const_iterator seriesItr = seriesUID.begin();
+      SeriesIdContainer::const_iterator seriesEnd = seriesUID.end();
 
-    std::string maskSeriesIdentifier;
+      std::string maskSeriesIdentifier;
 
-    SeriesIdContainer runTheseMasks;
-    if (maskSeriesIdentifierFlag) { // If no optional series identifier
-      runTheseMasks.push_back(maskSeriesName);
-    } else {
-      seriesItr = seriesUID.begin();
-      seriesEnd = seriesUID.end();
+      SeriesIdContainer runTheseMasks;
+      if (maskSeriesIdentifierFlag) { // If no optional series identifier
+        runTheseMasks.push_back(maskSeriesName);
+      } else {
+        seriesItr = seriesUID.begin();
+        seriesEnd = seriesUID.end();
+        while (seriesItr != seriesEnd) {
+          runTheseMasks.push_back(seriesItr->c_str());
+          ++seriesItr;
+        }
+      }
+
+      seriesItr = runTheseMasks.begin();
+      seriesEnd = runTheseMasks.end();
       while (seriesItr != seriesEnd) {
-        runTheseMasks.push_back(seriesItr->c_str());
+        maskSeriesIdentifier = seriesItr->c_str();
         ++seriesItr;
-      }
-    }
 
-    seriesItr = runTheseMasks.begin();
-    seriesEnd = runTheseMasks.end();
-    while (seriesItr != seriesEnd) {
-      maskSeriesIdentifier = seriesItr->c_str();
-      ++seriesItr;
+        if (verbose) {
+          std::cout << "Processing mask series: " << std::endl;
+          std::cout << "  " << maskSeriesIdentifier << std::endl;
+        }
+        fflush(stdout);
 
-      if (verbose) {
-        std::cout << "Processing mask series: " << std::endl;
-        std::cout << "  " << maskSeriesIdentifier << std::endl;
-      }
-      fflush(stdout);
+        maskFileNames = maskNameGenerator->GetFileNames(maskSeriesIdentifier);
 
-      maskFileNames = maskNameGenerator->GetFileNames(maskSeriesIdentifier);
-
-      //  loop over all files in this series
-      for (int sliceNr = 0; sliceNr < maskFileNames.size(); sliceNr++) {
+        //  loop over all files in this series
+        for (int sliceNr = 0; sliceNr < maskFileNames.size(); sliceNr++) {
           // using ImageType2D = itk::Image<PixelType, 2>;
           typedef itk::ImageFileReader<MaskImageType2D> MaskReader2DType;
           MaskReader2DType::Pointer r = MaskReader2DType::New();
@@ -1231,13 +1232,13 @@ int main(int argc, char *argv[]) {
           }
           // now changed the slice we are importing
           maskSlices.push_back(r->GetOutput());
-          //ImageType2D::Pointer im2change = r->GetOutput();
+          // ImageType2D::Pointer im2change = r->GetOutput();
         }
-
+      }
+    } catch (itk::ExceptionObject &ex) {
+      std::cout << ex << std::endl;
+      return EXIT_FAILURE;
     }
-  } catch (itk::ExceptionObject &ex) {
-    std::cout << ex << std::endl;
-    return EXIT_FAILURE;
   }
 
   typedef itk::ImageSeriesReader<ImageType> ReaderType;
@@ -1380,7 +1381,7 @@ int main(int argc, char *argv[]) {
 
           // make a copy of this image series in the output/images/ folder
           if (1) {
-            w->SetImageIO(dicomIO); // write the output there
+            // w->SetImageIO(dicomIO); // write the output there
             w->SetInput(im2change);
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
@@ -1391,7 +1392,7 @@ int main(int argc, char *argv[]) {
               create_directories(p_out.parent_path());
             }
             w->SetFileName(p_out.c_str());
-            // w->SetImageIO(dicomIO);
+            w->SetImageIO(dicomIO);
 
             try {
               w->Update();
