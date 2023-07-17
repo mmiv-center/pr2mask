@@ -1155,10 +1155,11 @@ int main(int argc, char *argv[]) {
   std::vector<MaskImageType2D::Pointer> maskSlices;
 
   typedef itk::GDCMImageIO ImageIOType;
-  ImageIOType::Pointer dicomIO = ImageIOType::New();
-  dicomIO->LoadPrivateTagsOn();  
+  ImageIOType::Pointer dicomIOMaskStack = ImageIOType::New();
+  dicomIOMaskStack->LoadPrivateTagsOn();
+  dicomIOMaskStack->KeepOriginalUIDOn();
 
-  maskReader->SetImageIO(dicomIO);
+  maskReader->SetImageIO(dicomIOMaskStack);
 
   typedef itk::GDCMSeriesFileNames MaskNamesGeneratorType;
   MaskNamesGeneratorType::Pointer maskNameGenerator = MaskNamesGeneratorType::New();
@@ -1212,12 +1213,12 @@ int main(int argc, char *argv[]) {
           // using ImageType2D = itk::Image<PixelType, 2>;
           typedef itk::ImageFileReader<MaskImageType2D> MaskReader2DType;
           MaskReader2DType::Pointer r = MaskReader2DType::New();
-          typedef itk::GDCMImageIO ImageIOType;
+          // typedef itk::GDCMImageIO ImageIOType;
+          //  we need to find out what for this image the ReferencedSOPInstanceUID is
+          //  only draw the contour on that image
           ImageIOType::Pointer dicomIOMask = ImageIOType::New();
           dicomIOMask->LoadPrivateTagsOn();
           dicomIOMask->KeepOriginalUIDOn();
-          // we need to find out what for this image the ReferencedSOPInstanceUID is
-          // only draw the contour on that image
 
           r->SetImageIO(dicomIOMask);
           r->SetFileName(maskFileNames[sliceNr]);
@@ -1378,8 +1379,8 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
 
           // make a copy of this image series in the output/images/ folder
-          if (0) {
-            w->SetImageIO(dicomIOMask);
+          if (1) {
+            w->SetImageIO(dicomIO); // write the output there
             w->SetInput(im2change);
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
