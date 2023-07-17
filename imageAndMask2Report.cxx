@@ -605,7 +605,7 @@ typedef ImageType3D::OffsetType OffsetType;
 // typedef itk::AddImageFilter<InternalImageType> AddImageFilterType;
 // typedef itk::MultiplyImageFilter<InternalImageType> MultiplyImageFilterType;
 
-using LabelType = PixelType;
+using LabelType = unsigned short;
 using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
 
 std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, ImageType3D::Pointer inputImage, ShapeLabelObjectType *labelObject,
@@ -1059,6 +1059,15 @@ MaskSliceImageType *readMaskImage2D(std::string filename, int sliceNr) {
   return a;
 }
 
+static inline void rtrim(std::string &s) {
+  s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+// trim from end (copying)
+static inline std::string rtrim_copy(std::string s) {
+  rtrim(s);
+  return s;
+}
 int main(int argc, char *argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
 
@@ -1082,7 +1091,7 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("SeriesName", "seriesname");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
 
-  command.SetOption("MaskSeriesName", "n", false, "Select series by series name (if more than one series is present).");
+  command.SetOption("MaskSeriesName", "m", false, "Select series by series name (if more than one series is present).");
   command.SetOptionLongTag("MaskSeriesName", "maskseriesname");
   command.AddOptionField("MaskSeriesName", "maskseriesname", MetaCommand::STRING, false);
 
@@ -1342,13 +1351,13 @@ int main(int argc, char *argv[]) {
           Reader2DType::Pointer r = Reader2DType::New();
           typedef itk::GDCMImageIO ImageIOType;
           ImageIOType::Pointer dicomIO = ImageIOType::New();
-          ImageIOType::Pointer dicomIOMask = ImageIOType::New();
+          // ImageIOType::Pointer dicomIOMask = ImageIOType::New();
           dicomIO->LoadPrivateTagsOn();
           dicomIO->KeepOriginalUIDOn();
-          dicomIOMask->LoadPrivateTagsOn();
-          dicomIOMask->KeepOriginalUIDOn();
-          // we need to find out what for this image the ReferencedSOPInstanceUID is
-          // only draw the contour on that image
+          // dicomIOMask->LoadPrivateTagsOn();
+          // dicomIOMask->KeepOriginalUIDOn();
+          //  we need to find out what for this image the ReferencedSOPInstanceUID is
+          //  only draw the contour on that image
 
           r->SetImageIO(dicomIO);
           r->SetFileName(fileNames[sliceNr]);
@@ -1453,7 +1462,7 @@ int main(int argc, char *argv[]) {
           ImageType2D::RegionType region;
           region = im2change->GetBufferedRegion();
           ImageType2D::SizeType size = region.GetSize();
-          std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
+          // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
 
           ImageType2D::PixelContainer *container;
           container = im2change->GetPixelContainer();
@@ -1698,7 +1707,7 @@ int main(int argc, char *argv[]) {
             std::string key = iter->first;
             std::string value = iter->second;
             json a = json::object();
-            a["record_id"] = PatientID;
+            a["record_id"] = rtrim_copy(PatientID);
             std::string ref = ReferringPhysician;
             std::string startString("EventName:");
             if (ref.find(startString) == 0) {

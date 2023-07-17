@@ -231,6 +231,7 @@ void saveReport(Report *report) {
   }
   if (!boost::filesystem::exists(font_file)) {
     fprintf(stderr, "\033[0;31mError\033[0m: no font provided. Set the environment variable REPORT_FONT_PATH to the location of a ttf file.\n");
+    fflush(stderr);
     return;
   }
 
