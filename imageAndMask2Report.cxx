@@ -1595,6 +1595,7 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1050", std::to_string(0.5));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1051", std::to_string(1));
 
+          Writer2DType::Pointer w = Writer2DType::New();
           w->SetInput(im2change);
           // create the output filename
           // we should have a folder for each image series
