@@ -73,6 +73,7 @@ using namespace boost::filesystem;
 json resultJSON;
 
 using ImageType2D = itk::Image<PixelType, 2>;
+using MaskImageType2D = itk::Image<PixelType, 2>;
 
 void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
                            std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose) {
@@ -238,6 +239,10 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   blueIterator.GoToBegin();
   while (!fusedLabelIterator.IsAtEnd() && !redIterator.IsAtEnd() && !greenIterator.IsAtEnd() && !blueIterator.IsAtEnd()) {
     // this will crash with many labels (more than in our const array)
+    auto vvvv = fusedLabelIterator.Get();
+    if (vvvv < 0 || vvvv > labelColors.size() - 1) {
+      fprintf(stderr, "Warning: mask label is too large for our colors %d\n", vvvv);
+    }
     redIterator.Set(labelColors[fusedLabelIterator.Get()][0]); // values are 0..1
     greenIterator.Set(labelColors[fusedLabelIterator.Get()][1]);
     blueIterator.Set(labelColors[fusedLabelIterator.Get()][2]);
@@ -1146,7 +1151,6 @@ int main(int argc, char *argv[]) {
   // 
   typedef itk::ImageSeriesReader<ImageType> MaskReaderType;
   MaskReaderType::Pointer maskReader = MaskReaderType::New();
-  typedef itk::Image<unsigned char, 2> MaskImageType2D;
 
   std::vector<MaskImageType2D::Pointer> maskSlices;
 
@@ -1370,7 +1374,7 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
 
           // make a copy of this image series in the output/images/ folder
-          if (1) {
+          if (0) {
             w->SetInput(im2change);
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
@@ -1464,6 +1468,7 @@ int main(int argc, char *argv[]) {
 
             // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
             // that have been selected before (air in intestines for example).
+            // buffer2 is destination, buffer3 is source (mask)
             memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
             // We can clean the data (remove all other label).
             /*for (int k = 0; k < size[0] * size[1]; k++) {
