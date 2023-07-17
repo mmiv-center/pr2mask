@@ -556,11 +556,12 @@ void saveReport(Report *report) {
 
   boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
   char dateOfReport[9];
-  snprintf(dateOfReport, 9, "%04s%02d%02d", timeLocal.date().year(), timeLocal.date().month(), timeLocal.date().day());
+  snprintf(dateOfReport, 9, "%04d%02d%02d", (int)(timeLocal.date().year()), (int)(timeLocal.date().month()), (int)(timeLocal.date().day()));
   std::string DateOfSecondaryCapture = std::string(dateOfReport);
   // std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
   char timeOfReport[7];
-  snprintf(timeOfReport, 7, "%02d%02d%02d", timeLocal.time_of_day().hours(), timeLocal.time_of_day().minutes(), timeLocal.time_of_day().seconds());
+  snprintf(timeOfReport, 7, "%02d%02d%02d", (int)(timeLocal.time_of_day().hours()), (int)(timeLocal.time_of_day().minutes()),
+           (int)(timeLocal.time_of_day().seconds()));
   std::string TimeOfSecondaryCapture = std::string(timeOfReport);
   //    std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
 
