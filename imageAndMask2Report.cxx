@@ -1340,7 +1340,6 @@ int main(int argc, char *argv[]) {
           typedef itk::ImageFileReader<ImageType2D> Reader2DType;
           typedef itk::ImageFileWriter<ImageType2D> Writer2DType;
           Reader2DType::Pointer r = Reader2DType::New();
-          Writer2DType::Pointer w = Writer2DType::New();
           typedef itk::GDCMImageIO ImageIOType;
           ImageIOType::Pointer dicomIO = ImageIOType::New();
           ImageIOType::Pointer dicomIOMask = ImageIOType::New();
@@ -1379,6 +1378,7 @@ int main(int argc, char *argv[]) {
           // make a copy of this image series in the output/images/ folder
           if (1) {
             // w->SetImageIO(dicomIO); // write the output there
+            Writer2DType::Pointer w = Writer2DType::New();
             w->SetInput(im2change);
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
