@@ -1,3 +1,4 @@
+#include <cstddef>
 #include "itkGDCMImageIO.h"
 #include "itkGDCMSeriesFileNames.h"
 #include "itkImageFileWriter.h"
@@ -643,7 +644,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
 
     gdcm::Attribute<0x0008, 0x0060> modalityAttr;
     modalityAttr.Set(ds);
-    if (modalityAttr.GetValue() != std::string("PR")) { // PR's might reference these
+    if (std::string(modalityAttr.GetValue()) != std::string("PR")) { // PR's might reference these
       // we should create a cache here for the SeriesInstanceUID the ReferencedSOPInstanceUID might point to
       gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
       seriesinstanceuidAttr.Set(ds);
