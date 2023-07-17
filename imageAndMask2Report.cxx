@@ -1149,11 +1149,10 @@ int main(int argc, char *argv[]) {
   //
   // READ the mask image into an array of slices
   //
+  std::vector<MaskImageType2D::Pointer> maskSlices;
   if (0) {
     typedef itk::ImageSeriesReader<ImageType> MaskReaderType;
     MaskReaderType::Pointer maskReader = MaskReaderType::New();
-
-    std::vector<MaskImageType2D::Pointer> maskSlices;
 
     typedef itk::GDCMImageIO ImageIOType;
     ImageIOType::Pointer dicomIOMaskStack = ImageIOType::New();
