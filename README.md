@@ -116,3 +116,9 @@ Note: build in debug mode:
 cmake -DCMAKE_BUILD_TYPE=Debug .
 make
 ```
+
+If you want to build in macos you might need to specify the location of qt5 with
+
+```
+cmake . -DCMAKE_PREFIX_PATH=/opt/homebrew/Cellar/qt@5/5.15.10
+```
