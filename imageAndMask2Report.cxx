@@ -1213,13 +1213,13 @@ int main(int argc, char *argv[]) {
           typedef itk::ImageFileReader<MaskImageType2D> MaskReader2DType;
           MaskReader2DType::Pointer r = MaskReader2DType::New();
           typedef itk::GDCMImageIO ImageIOType;
-          ImageIOType::Pointer dicomIO = ImageIOType::New();
-          dicomIO->LoadPrivateTagsOn();
-          dicomIO->KeepOriginalUIDOn();
+          ImageIOType::Pointer dicomIOMask = ImageIOType::New();
+          dicomIOMask->LoadPrivateTagsOn();
+          dicomIOMask->KeepOriginalUIDOn();
           // we need to find out what for this image the ReferencedSOPInstanceUID is
           // only draw the contour on that image
 
-          r->SetImageIO(dicomIO);
+          r->SetImageIO(dicomIOMask);
           r->SetFileName(maskFileNames[sliceNr]);
           try {
             r->Update();
@@ -1344,8 +1344,11 @@ int main(int argc, char *argv[]) {
           Writer2DType::Pointer w = Writer2DType::New();
           typedef itk::GDCMImageIO ImageIOType;
           ImageIOType::Pointer dicomIO = ImageIOType::New();
+          ImageIOType::Pointer dicomIOMask = ImageIOType::New();
           dicomIO->LoadPrivateTagsOn();
           dicomIO->KeepOriginalUIDOn();
+          dicomIOMask->LoadPrivateTagsOn();
+          dicomIOMask->KeepOriginalUIDOn();
           // we need to find out what for this image the ReferencedSOPInstanceUID is
           // only draw the contour on that image
 
@@ -1376,6 +1379,7 @@ int main(int argc, char *argv[]) {
 
           // make a copy of this image series in the output/images/ folder
           if (0) {
+            w->SetImageIO(dicomIOMask);
             w->SetInput(im2change);
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
@@ -1386,7 +1390,7 @@ int main(int argc, char *argv[]) {
               create_directories(p_out.parent_path());
             }
             w->SetFileName(p_out.c_str());
-            w->SetImageIO(dicomIO);
+            // w->SetImageIO(dicomIO);
 
             try {
               w->Update();
@@ -1459,8 +1463,8 @@ int main(int argc, char *argv[]) {
           ImageType2D::PixelType *buffer2 = container->GetBufferPointer();
 
           ImageType2D::Pointer nImage;
-          MaskSliceImageType::PixelContainer *container2 = maskImage->GetPixelContainer();
-          MaskSliceImageType::PixelType *buffer3 = container2->GetBufferPointer();
+          MaskImageType2D::PixelContainer *container2 = maskImage->GetPixelContainer();
+          MaskImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
 
           // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
           // that have been selected before (air in intestines for example).
