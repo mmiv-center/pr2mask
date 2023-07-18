@@ -254,7 +254,7 @@ void saveReport(Report *report) {
   FT_Error error;
   // gdcm::ImageReader reader;
 
-  unsigned long len = WIDTH * HEIGHT * 8;
+  unsigned long len = WIDTH * HEIGHT; // in bytes
   char *buffer = new char[len];
 
   error = FT_Init_FreeType(&library); /* initialize library */
@@ -506,7 +506,7 @@ void saveReport(Report *report) {
   }
 
   gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
-  pixeldata.SetByteValue(buffer, WIDTH * HEIGHT * 8);
+  pixeldata.SetByteValue(buffer, WIDTH * HEIGHT); // in bytes
 
   gdcm::SmartPointer<gdcm::Image> im = new gdcm::Image;
   im->SetNumberOfDimensions(2);
