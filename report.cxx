@@ -256,6 +256,8 @@ void saveReport(Report *report) {
 
   unsigned long len = WIDTH * HEIGHT; // in bytes
   char *buffer = new char[len];
+  // set the buffer to black (=0)
+  memset(&buffer[0], 0, sizeof(char)*len);
 
   error = FT_Init_FreeType(&library); /* initialize library */
 
