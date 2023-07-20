@@ -259,6 +259,7 @@ void saveReport(Report *report) {
   // set the buffer to black (=0)
   memset(&buffer[0], 0, sizeof(char)*len);
 
+
   error = FT_Init_FreeType(&library); /* initialize library */
 
   if (error != 0) {
@@ -505,6 +506,33 @@ void saveReport(Report *report) {
     // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
     addToReport(buffer, font_file, 26, std::string("mm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
     addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
+  }
+
+  //
+  // add a logo in the lower right corner of the report
+  //
+  const int bitmapWidth = 20;
+  const int bitmapHeight = 10;
+  unsigned char bitmap[bitmapWidth * bitmapHeight] = {
+        '@', '@', '@', '@', '.', '.', '.', '.', '@', '@', '@', '@',
+        '@', '@', '@', '@', '.', '.', '.', '.', '@', '@', '@', '@',
+        '@', '.', '.', '@', '.', '@', '@', '.', '@', '.', '.', '@',
+        '@', '.', '.', '@', '@', '.', '.', '@', '@', '.', '.', '@',
+        '@', '.', '.', '.', '@', '.', '.', '@', '@', '.', '.', '.',
+        '@', '.', '.', '.', '@', '.', '.', '@', '@', '.', '.', '.',
+        '@', '.', '.', '.', '@', '.', '.', '@', '@', '.', '.', '.',
+        '@', '.', '.', '.', '@', '.', '.', '@', '@', '.', '.', '.',
+        '@', '.', '.', '.', '@', '.', '.', '@', '@', '.', '.', '.',
+        '@', '.', '.', '.', '.', '@', '@', '.', '@', '.', '.', '.'
+  };
+  int startX = WIDTH - bitmapWidth;  // Calculate the starting X position for the bitmap
+  int startY = HEIGHT - bitmapHeight;  // Calculate the starting Y position for the bitmap
+
+  // Copy the bitmap into the 2D image buffer
+  for (int y = 0; y < bitmapHeight; ++y) {
+      for (int x = 0; x < bitmapWidth; ++x) {
+          buffer[(startY + y) * WIDTH + (startX + x)] = bitmap[y * bitmapWidth + x];
+      }
   }
 
   gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
