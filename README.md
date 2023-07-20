@@ -122,3 +122,12 @@ If you want to build in macos you might need to specify the location of qt5 with
 ```
 cmake . -DCMAKE_PREFIX_PATH=/opt/homebrew/Cellar/qt@5/5.15.10
 ```
+
+## Debugging
+
+To create a report you can do:
+
+```bash
+./imageAndMask2Report data/input data/mask /tmp/blarg -u
+./json2SR /tmp/blarg/*.json
+```
