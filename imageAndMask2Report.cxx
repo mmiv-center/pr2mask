@@ -1179,6 +1179,7 @@ int main(int argc, char *argv[]) {
 
   typedef std::vector<std::string> MaskFileNamesContainer;
   MaskFileNamesContainer maskFileNames;
+  std::string maskSeriesIdentifier;
 
   try {
     typedef std::vector<std::string> SeriesIdContainer;
@@ -1187,8 +1188,6 @@ int main(int argc, char *argv[]) {
 
     SeriesIdContainer::const_iterator seriesItr = seriesUID.begin();
     SeriesIdContainer::const_iterator seriesEnd = seriesUID.end();
-
-    std::string maskSeriesIdentifier;
 
     SeriesIdContainer runTheseMasks;
     if (maskSeriesIdentifierFlag) { // If no optional series identifier
@@ -1695,9 +1694,34 @@ int main(int argc, char *argv[]) {
         report->filename = std::string(p_out.c_str());
         saveReport(report);
 
-        // add measures to json output
-        resultJSON["measures"] = report->measures;
-
+        // add measures to json output, make sure to keep values from previous iteration
+        if (!resultJSON.contains("measures")) {
+          resultJSON["measures"] = json::array();
+        }
+        std::vector< std::map<std::string, std::string> >::iterator iter = report->measures.begin();
+        for(iter; iter < report->measures.end(); iter++) {
+          resultJSON["measures"].push_back(*iter);
+        }
+        if (!resultJSON.contains("meta-data")) {
+          resultJSON["meta-data"] = json::array();
+        }
+        json obj = { 
+          { "PatientName", report->PatientName },
+          { "PatientID", report->PatientID },
+          { "SeriesInstanceUID", report->SeriesInstanceUID },
+          { "StudyInstanceUID", report->StudyInstanceUID },
+          { "FrameOfReferenceUID", report->FrameOfReferenceUID },
+          { "ReferringPhysician", report->ReferringPhysician },
+          { "StudyID", report->StudyID },
+          { "AccessionNumber", report->AccessionNumber },
+          { "SeriesDescription", report->SeriesDescription },
+          { "StudyDate", report->StudyDate },
+          { "StudyTime", report->StudyTime },
+          { "InputImageSeriesIdentifier", seriesIdentifier },
+          { "InputMaskSeriesIdentifier", maskSeriesIdentifier },
+          { "Summary", report->summary }
+        };
+        resultJSON["meta-data"].push_back(obj);
         // produce a REDCap friendly output format for the measures
         json redcap = json::array();
         for (int i = 0; i < report->measures.size(); i++) {
