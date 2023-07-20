@@ -86,10 +86,7 @@ int main(int argc, char *argv[]) {
             if (meta.is_array() && meta.size() > 0) {
                 for (int j = 0; j < meta.size(); j++) {
                     if (meta[j].contains("StudyInstanceUID")) {
-                        std::ostringstream value;
-                        value.str("");
-                        value << meta[j]["StudyInstanceUID"];
-                        StudyInstanceUID = value.str();
+                        StudyInstanceUID = meta[j]["StudyInstanceUID"];
                         StudyInstanceUID.erase(remove( StudyInstanceUID.begin(), StudyInstanceUID.end(), '\"' ),StudyInstanceUID.end());
                         studyUID_01 = OFString(StudyInstanceUID.c_str());
                         //fprintf(stderr, "Found study instance uid %s\n", value.str().c_str());
@@ -173,23 +170,117 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     std::string PatientName("");
     if (meta.contains("PatientName"))
         PatientName = meta["PatientName"];
+    std::string PatientID("");
+    if (meta.contains("PatientID"))
+        PatientID = meta["PatientID"];
+    std::string ReportSOPInstanceUID("");
+    if (meta.contains("ReportSOPInstanceUID"))
+        ReportSOPInstanceUID = meta["ReportSOPInstanceUID"];
+    std::string StudyInstanceUID("");
+    if (meta.contains("StudyInstanceUID"))
+        StudyInstanceUID = meta["StudyInstanceUID"];
+    std::string ReportSeriesInstanceUID;
+    if (meta.contains("SeriesInstanceUID"))
+        ReportSeriesInstanceUID = meta["SeriesInstanceUID"];
 
-    doc->createNewDocument(DSRTypes::DT_EnhancedSR);
+    doc->createNewDocument(DSRTypes::DT_BasicTextSR);
     if (!studyUID_01.empty()) {
         //fprintf(stderr, "study instance uid is not empty\n");
         // we will overwrite the series instance uid later, ignore for now... 
         doc->createNewSeriesInStudy(studyUID_01);
     }
     doc->setStudyDescription("ROR Structured report");
-    doc->setSeriesDescription("Text Report with CODE, NUM and PNAME content items");
+    doc->setSeriesDescription("ROR SR representation for report");
 
     doc->setPatientName(PatientName.c_str());
+    doc->setPatientID(PatientID.c_str());
     doc->setPatientBirthDate("00000000");
     doc->setPatientSex("O");
     doc->setReferringPhysicianName(ReferringPhysician.c_str());
 
     doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.06", OFFIS_CODING_SCHEME_DESIGNATOR, "Consultation Report"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", OFFIS_CODING_SCHEME_DESIGNATOR, "MMIV Report"));
+
+    doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_PName, DSRTypes::AM_belowCurrent);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.04", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Name"));
+    doc->getTree().getCurrentContentItem().setStringValue(ReferringPhysician.c_str());
+    doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.05", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Organization Name"));
+    doc->getTree().getCurrentContentItem().setStringValue("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
+
+    doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_27", OFFIS_CODING_SCHEME_DESIGNATOR, "Referenced image series"));
+    // doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, "1.2.276.0.7230010.3.1.4.123456.1.1a", OFFalse));
+    doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse)); // specify SOPInstanceUID of report
+    doc->getCurrentRequestedProcedureEvidence().addItem(StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse );
+
+    doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", OFFIS_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
+    doc->getTree().getCurrentContentItem().setStringValue("This report image is referenced by this SR.");
+
+    // measures
+    // walk through all the measures we find in the report
+    for (auto& el : measures.items()) {
+        std::string key = el.key();
+        std::string value = el.value();
+        doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
+        doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_01", OFFIS_CODING_SCHEME_DESIGNATOR, "Description"));
+        doc->getTree().getCurrentContentItem().setStringValue((std::string("Measure: ") + key).c_str());
+
+        doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Num);
+        doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("112187", "SNM3", "Measure"));
+        doc->getTree().getCurrentContentItem().setNumericValue(DSRNumericMeasurementValue(value.c_str(), CODE_UCUM_Pixels));
+    }
+
+    doc->getCodingSchemeIdentification().addItem(CODE_UCUM_CodingSchemeDesignator);
+    doc->getCodingSchemeIdentification().setCodingSchemeUID(CODE_UCUM_CodingSchemeUID);
+    doc->getCodingSchemeIdentification().setCodingSchemeName(CODE_UCUM_CodingSchemeDescription);
+    doc->getCodingSchemeIdentification().setCodingSchemeResponsibleOrganization("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
+
+/*
+
+    //doc->createNewDocument(DSRTypes::DT_EnhancedSR);
+    doc->createNewDocument(DSRTypes::DT_BasicTextSR);
+    if (!studyUID_01.empty()) {
+        //fprintf(stderr, "study instance uid is not empty\n");
+        // we will overwrite the series instance uid later, ignore for now... 
+        doc->createNewSeriesInStudy(studyUID_01);
+    }
+    doc->setStudyDescription("ROR Structured report");
+    doc->setSeriesDescription("ROR SR representation for report");
+
+    doc->setPatientName(PatientName.c_str());
+    doc->setPatientID(PatientID.c_str());
+    doc->setPatientBirthDate("00000000");
+    doc->setPatientSex("O");
+    doc->setReferringPhysicianName(ReferringPhysician.c_str());
+
+    doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", OFFIS_CODING_SCHEME_DESIGNATOR, "MMIV Report"));
+    //doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text);
+
+    doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_PName, DSRTypes::AM_belowCurrent);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.04", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Name"));
+    doc->getTree().getCurrentContentItem().setStringValue(ReferringPhysician.c_str());
+    doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.05", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Organization Name"));
+    doc->getTree().getCurrentContentItem().setStringValue("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
+
+    // reference the image (study series sop)
+    doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_27", OFFIS_CODING_SCHEME_DESIGNATOR, "Referenced image series"));
+    doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str())); // specify SOPInstanceUID of report
+    doc->getCurrentRequestedProcedureEvidence().addItem(StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str());
+
+    doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", OFFIS_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
+    doc->getTree().getCurrentContentItem().setStringValue("This report image is referenced by this SR.");
+
+    doc->getTree().goUp();
+    fprintf(stderr, "writing %s %s %s %s\n", StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), ReportSOPInstanceUID.c_str(), UID_SecondaryCaptureImageStorage);
+
+    //doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
+    //doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.06", OFFIS_CODING_SCHEME_DESIGNATOR, "Consultation Report"));
 
     doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_PName, DSRTypes::AM_belowCurrent);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.04", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Name"));
@@ -220,7 +311,7 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
 
         doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Num);
         doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("112187", "SNM3", "Measure"));
-        doc->getTree().getCurrentContentItem().setNumericValue(DSRNumericMeasurementValue(value.c_str(), CODE_UCUM_Pixels /* CODE_UCUM_Centimeter*/));
+        doc->getTree().getCurrentContentItem().setNumericValue(DSRNumericMeasurementValue(value.c_str(), CODE_UCUM_Pixels));
     }
 
     doc->getTree().goUp();
@@ -234,6 +325,8 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->getCodingSchemeIdentification().setCodingSchemeUID(CODE_UCUM_CodingSchemeUID);
     doc->getCodingSchemeIdentification().setCodingSchemeName(CODE_UCUM_CodingSchemeDescription);
     doc->getCodingSchemeIdentification().setCodingSchemeResponsibleOrganization("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
+
+    */
 }
 
 

@@ -1658,6 +1658,8 @@ int main(int argc, char *argv[]) {
         report->StudyID = StudyID;
         report->SeriesDescription = seriesDescription + " (report)";
         report->ReferringPhysician = ReferringPhysician;
+        report->ReportSeriesInstanceUID = seriesIdentifier;
+        report->SOPInstanceUID = SOPInstanceUID;
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
         if (uidFixedFlag) {
@@ -1668,6 +1670,7 @@ int main(int argc, char *argv[]) {
           // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
           derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
           report->SeriesInstanceUID = derivedSeriesInstanceUID;
+          report->ReportSeriesInstanceUID = derivedSeriesInstanceUID;
 
           std::string newSOPInstanceUID = SOPInstanceUID;
           if (newSOPInstanceUID.substr(newSOPInstanceUID.size() - 2, 2) == ".7")
@@ -1719,6 +1722,7 @@ int main(int argc, char *argv[]) {
           { "StudyTime", report->StudyTime },
           { "InputImageSeriesIdentifier", seriesIdentifier },
           { "InputMaskSeriesIdentifier", maskSeriesIdentifier },
+	  { "ReportSOPInstanceUID", report->SOPInstanceUID },
           { "Summary", report->summary }
         };
         resultJSON["meta-data"].push_back(obj);
