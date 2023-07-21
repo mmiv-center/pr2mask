@@ -206,7 +206,7 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->getTree().getCurrentContentItem().setStringValue(ReferringPhysician.c_str());
     doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.05", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Organization Name"));
-    doc->getTree().getCurrentContentItem().setStringValue("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
+    doc->getTree().getCurrentContentItem().setStringValue("Mohn Medical Imaging and Visualization Centre, Haukeland University Hospital, Bergen, Norway");
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_27", OFFIS_CODING_SCHEME_DESIGNATOR, "Referenced image series"));
