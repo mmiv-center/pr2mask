@@ -119,6 +119,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   std::string AcquisitionNumber("");
   std::string InstanceNumber("");
   std::string frameOfReferenceUID("");
+
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0011", SeriesNumber);
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
@@ -526,6 +527,18 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   gdcm::Attribute<0x0008, 0x0018> at6;
   at6.SetValue(newFusedSOPInstanceUID);
   ds.Replace(at6.GetAsDataElement());
+
+  gdcm::Attribute<0x0008, 0x0008> at_image_type;
+  static const gdcm::CSComp values[] = {"DERIVED","SECONDARY"};
+  at_image_type.SetValues( values, 2, true ); // true => copy data !
+  if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
+    const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
+    //at_image_type.SetFromDataElement( de );
+    // Make sure that value #1 is at least 'DERIVED', so override in all cases:
+    at_image_type.SetValue( 0, values[0] );
+    at_image_type.SetValue( 1, values[1] );
+  }
+  ds.Replace( at_image_type.GetAsDataElement() );
 
   // image position patient from input
   // These values are actually not getting written to the files (RGB has no origin, values are 0\0\0, but see set origin further down)

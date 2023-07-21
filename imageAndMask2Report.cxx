@@ -481,6 +481,19 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   at6.SetValue(newFusedSOPInstanceUID);
   ds.Replace(at6.GetAsDataElement());
 
+  // set image type to derived
+  gdcm::Attribute<0x0008, 0x0008> at_image_type;
+  static const gdcm::CSComp values[] = {"DERIVED","SECONDARY"};
+  at_image_type.SetValues( values, 2, true ); // true => copy data !
+  if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
+    const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
+    //at_image_type.SetFromDataElement( de );
+    // Make sure that value #1 is at least 'DERIVED', so override in all cases:
+    at_image_type.SetValue( 0, values[0] );
+    at_image_type.SetValue( 1, values[1] );
+  }
+  ds.Replace( at_image_type.GetAsDataElement() );
+
   // image position patient from input
   // These values are actually not getting written to the files (RGB has no origin, values are 0\0\0, but see set origin further down)
   gdcm::Attribute<0x0020, 0x0032> at7;
@@ -1594,6 +1607,23 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newSeriesInstanceUID);
 
+          // set to DERIVED\\SECONDARY
+/*          gdcm::File &fd = r->GetFile();
+          gdcm::DataSet &ds = fd.GetDataSet();
+
+          gdcm::Attribute<0x0008,0x0008> at_image_type;
+          static const gdcm::CSComp values[] = {"DERIVED","SECONDARY"};
+          at_image_type.SetValues( values, 2, true ); // true => copy data !
+          if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
+            const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
+            at_image_type.SetFromDataElement( de );
+            // Make sure that value #1 is at least 'DERIVED', so override in all cases:
+            at_image_type.SetValue( 0, values[0] );
+          }
+          ds.Replace( at_image_type.GetAsDataElement() );
+*/
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0008", std::string("DERIVED\\SECONDARY"));
+
           // set the series description (max 64 characters)
           if (seriesDescription != "")
             seriesDescription += " ";
@@ -1722,7 +1752,7 @@ int main(int argc, char *argv[]) {
           { "StudyTime", report->StudyTime },
           { "InputImageSeriesIdentifier", seriesIdentifier },
           { "InputMaskSeriesIdentifier", maskSeriesIdentifier },
-	  { "ReportSOPInstanceUID", report->SOPInstanceUID },
+      	  { "ReportSOPInstanceUID", report->SOPInstanceUID },
           { "Summary", report->summary }
         };
         resultJSON["meta-data"].push_back(obj);
