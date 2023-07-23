@@ -227,9 +227,11 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
         doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_01", OFFIS_CODING_SCHEME_DESIGNATOR, "Description"));
         doc->getTree().getCurrentContentItem().setStringValue((std::string("Measure: ") + key).c_str());
 
-        doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Num);
+        // doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Num);
+        doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
         doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("112187", "SNM3", "Measure"));
-        doc->getTree().getCurrentContentItem().setNumericValue(DSRNumericMeasurementValue(value.c_str(), CODE_UCUM_Pixels));
+        // doc->getTree().getCurrentContentItem().setNumericValue(DSRNumericMeasurementValue(value.c_str(), CODE_UCUM_Pixels));
+        doc->getTree().getCurrentContentItem().setStringValue(value.c_str());
     }
 
     doc->getCodingSchemeIdentification().addItem(CODE_UCUM_CodingSchemeDesignator);
