@@ -11,6 +11,8 @@
 #include "json.hpp"
 #include <string>
 
+#define MMIV_CODING_SCHEME_DESIGNATOR "99_OFFIS_DCMTK"
+
 // forward declarations
 static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &report);
 
@@ -199,23 +201,23 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->setReferringPhysicianName(ReferringPhysician.c_str());
 
     doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", OFFIS_CODING_SCHEME_DESIGNATOR, "MMIV Report"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", MMIV_CODING_SCHEME_DESIGNATOR, "MMIV Report"));
 
     doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_PName, DSRTypes::AM_belowCurrent);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.04", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Name"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.04", MMIV_CODING_SCHEME_DESIGNATOR, "Observer Name"));
     doc->getTree().getCurrentContentItem().setStringValue(ReferringPhysician.c_str());
     doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_Text);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.05", OFFIS_CODING_SCHEME_DESIGNATOR, "Observer Organization Name"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("IHE.05", MMIV_CODING_SCHEME_DESIGNATOR, "Observer Organization Name"));
     doc->getTree().getCurrentContentItem().setStringValue("Mohn Medical Imaging and Visualization Centre, Haukeland University Hospital, Bergen, Norway");
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_27", OFFIS_CODING_SCHEME_DESIGNATOR, "Referenced image series"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_27", MMIV_CODING_SCHEME_DESIGNATOR, "Referenced image series"));
     // doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, "1.2.276.0.7230010.3.1.4.123456.1.1a", OFFalse));
     doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse)); // specify SOPInstanceUID of report
     doc->getCurrentRequestedProcedureEvidence().addItem(StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse );
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", OFFIS_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", MMIV_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
     doc->getTree().getCurrentContentItem().setStringValue("This report image is referenced by this SR.");
 
     // measures
@@ -224,7 +226,7 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
         std::string key = el.key();
         std::string value = el.value();
         doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
-        doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_01", OFFIS_CODING_SCHEME_DESIGNATOR, "Description"));
+        doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_01", MMIV_CODING_SCHEME_DESIGNATOR, "Description"));
         doc->getTree().getCurrentContentItem().setStringValue((std::string("Measure: ") + key).c_str());
 
         // doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Num);
