@@ -139,6 +139,11 @@ int main(int argc, char *argv[]) {
                         std::string PatientID = meta[0]["PatientID"];
                         dataset->putAndInsertString(DCM_PatientID, PatientID.c_str());
                     }
+                    if (meta.size() > 0 && meta[0].contains("InstitutionName")) {
+                        std::string InstitutionName = meta[0]["InstitutionName"];
+                        dataset->putAndInsertString(DCM_InstitutionName, InstitutionName.c_str());
+                    }
+
 
                     std::cout << "Write: " << outputFilename << "..." << OFendl;
                     OFString filename(outputFilename.c_str());
@@ -200,6 +205,9 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     std::string StudyID;
     if (meta.contains("StudyID"))
         StudyID = meta["StudyID"];
+    std::string InstitutionName;
+    if (meta.contains("InstitutionName"))
+        InstitutionName = meta["InstitutionName"];
 
     doc->createNewDocument(DSRTypes::DT_BasicTextSR);
     if (!studyUID_01.empty()) {
@@ -217,6 +225,7 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->setReferringPhysicianName(ReferringPhysician.c_str());
     doc->setAccessionNumber(AccessionNumber.c_str());
     doc->setStudyID(StudyID.c_str());
+    //doc->setInstitutionName(InstitutionName.c_str());
 
     doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", MMIV_CODING_SCHEME_DESIGNATOR, "MMIV Report"));
