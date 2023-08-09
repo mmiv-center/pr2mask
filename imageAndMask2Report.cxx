@@ -1346,6 +1346,9 @@ int main(int argc, char *argv[]) {
         // remember the last SOPInstanceUID from the list of images
         std::string SOPInstanceUID;
 
+        // remember the last InstitutionName
+        std::string InstitutionName;
+
         // we need to reset some attributes because they are stack specific
         PatientName = "";
         PatientID = "";
@@ -1354,6 +1357,7 @@ int main(int argc, char *argv[]) {
         StudyTime = "";
         AccessionNumber = "";
         StudyID = "";
+        InstitutionName = "";
 
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
@@ -1395,6 +1399,7 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|0080", InstitutionName);
 
           // make a copy of this image series in the output/images/ folder
           if (1) {
@@ -1690,6 +1695,7 @@ int main(int argc, char *argv[]) {
         report->ReferringPhysician = ReferringPhysician;
         report->ReportSeriesInstanceUID = seriesIdentifier;
         report->SOPInstanceUID = SOPInstanceUID;
+        report->InstitutionName = InstitutionName;
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
         if (uidFixedFlag) {
@@ -1753,6 +1759,7 @@ int main(int argc, char *argv[]) {
           { "InputImageSeriesIdentifier", seriesIdentifier },
           { "InputMaskSeriesIdentifier", maskSeriesIdentifier },
       	  { "ReportSOPInstanceUID", report->SOPInstanceUID },
+          { "InstitutionName", report->InstitutionName },
           { "Summary", report->summary }
         };
         resultJSON["meta-data"].push_back(obj);

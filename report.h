@@ -25,6 +25,7 @@ typedef struct {
   std::string StudyTime;
   std::string key_fact;
   std::string key_unit;
+  std::string InstitutionName;
   std::vector<std::string> summary;
   std::vector<std::map<std::string, std::string> > measures;
 } Report;

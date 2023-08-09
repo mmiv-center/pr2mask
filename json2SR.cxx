@@ -11,7 +11,17 @@
 #include "json.hpp"
 #include <string>
 
-#define MMIV_CODING_SCHEME_DESIGNATOR "99_OFFIS_DCMTK"
+#define MMIV_CODING_SCHEME_DESIGNATOR "99_MMIV_DCMTK"
+
+static inline void rtrim(std::string &s) {
+  s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+// trim from end (copying)
+static inline std::string rtrim_copy(std::string s) {
+  rtrim(s);
+  return s;
+}
 
 // forward declarations
 static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &report);
@@ -171,10 +181,10 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
         ReferringPhysician = meta["ReferringPhysician"];
     std::string PatientName("");
     if (meta.contains("PatientName"))
-        PatientName = meta["PatientName"];
+        PatientName = rtrim_copy(meta["PatientName"]);
     std::string PatientID("");
     if (meta.contains("PatientID"))
-        PatientID = meta["PatientID"];
+        PatientID = rtrim_copy(meta["PatientID"]);
     std::string ReportSOPInstanceUID("");
     if (meta.contains("ReportSOPInstanceUID"))
         ReportSOPInstanceUID = meta["ReportSOPInstanceUID"];
@@ -184,6 +194,12 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     std::string ReportSeriesInstanceUID;
     if (meta.contains("SeriesInstanceUID"))
         ReportSeriesInstanceUID = meta["SeriesInstanceUID"];
+    std::string AccessionNumber;
+    if (meta.contains("AccessionNumber"))
+        AccessionNumber = meta["AccessionNumber"];
+    std::string StudyID;
+    if (meta.contains("StudyID"))
+        StudyID = meta["StudyID"];
 
     doc->createNewDocument(DSRTypes::DT_BasicTextSR);
     if (!studyUID_01.empty()) {
@@ -199,6 +215,8 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->setPatientBirthDate("00000000");
     doc->setPatientSex("O");
     doc->setReferringPhysicianName(ReferringPhysician.c_str());
+    doc->setAccessionNumber(AccessionNumber.c_str());
+    doc->setStudyID(StudyID.c_str());
 
     doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", MMIV_CODING_SCHEME_DESIGNATOR, "MMIV Report"));
