@@ -51,6 +51,7 @@
 #include "itkMultiplyImageFilter.h"
 #include "itkRegionOfInterestImageFilter.h"
 #include "itkScalarImageToCooccurrenceMatrixFilter.h"
+#include "itkScalarImageToRunLengthMatrixFilter.h"
 
 #include "itkGDCMImageIO.h"
 
@@ -612,6 +613,7 @@ typedef itk::Neighborhood<float, 3> NeighborhoodType;
 typedef itk::Statistics::DenseFrequencyContainer2 FrequencyContainerType;
 
 typedef itk::Statistics::ScalarImageToCooccurrenceMatrixFilter<ImageType3D> Image2CoOccuranceType;
+typedef itk::Statistics::ScalarImageToRunLengthMatrixFilter<ImageType3D> Image2RunLengthType;
 typedef Image2CoOccuranceType::HistogramType HistogramType;
 typedef itk::Statistics::HistogramToTextureFeaturesFilter<HistogramType> Hist2FeaturesType;
 typedef ImageType3D::OffsetType OffsetType;
@@ -620,6 +622,163 @@ typedef ImageType3D::OffsetType OffsetType;
 
 using LabelType = unsigned short;
 using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
+
+std::map<std::string, std::string> calcTextureRunLengthFeatureImage(ImageType3D::Pointer inputImage, ShapeLabelObjectType *labelObject,
+                                                           int pixelMinVal, int pixelMaxVal) {
+
+  ImageType3D::Pointer mask = ImageType3D::New();
+  ImageType3D::RegionType maskRegion = inputImage->GetLargestPossibleRegion();
+  mask->SetRegions(maskRegion);
+  mask->Allocate();
+  mask->FillBuffer(itk::NumericTraits<PixelType>::Zero);
+  mask->SetOrigin(inputImage->GetOrigin());
+  mask->SetSpacing(inputImage->GetSpacing());
+  mask->SetDirection(inputImage->GetDirection());
+  // use the mask as a single region of interest
+  double Np = labelObject->Size();
+  for (unsigned int pixelID = 0; pixelID < labelObject->Size(); pixelID++) {
+    mask->SetPixel(labelObject->GetIndex(pixelID), 1);
+  }
+
+  std::stringstream buf;
+  std::map<std::string, std::string> results;
+
+  // Image2RunLengthType
+  using FilterType = itk::Statistics::ScalarImageToRunLengthMatrixFilter<ImageType3D>;
+  auto filter = FilterType::New();
+  filter->SetInput(inputImage);
+  ImageType3D::OffsetType      offset1 = { { 0, -1 } };
+  ImageType3D::OffsetType      offset2 = { { -1, 0 } };
+  FilterType::OffsetVectorPointer offsetV = FilterType::OffsetVector::New();
+  offsetV->push_back(offset1);
+  offsetV->push_back(offset2);
+
+  filter->SetOffsets(offsetV);
+  filter->SetMaskImage(mask);
+  // purposely setting the max value to max(Image)+1
+  filter->SetPixelValueMinMax(pixelMinVal, pixelMaxVal+1);
+  int Nr = 8;
+  filter->SetDistanceValueMinMax(0, Nr);
+  int Ng = 5;
+  filter->SetNumberOfBinsPerAxis(Ng);
+  filter->Update();
+  const FilterType::HistogramType * hist = filter->GetOutput();
+  // resulting frequencies are in hist->GetMeasurementVectorSize() entries
+  // from these frequencies we need to compute some summary values
+  // see https://pyradiomics.readthedocs.io/en/v1.0/radiomics.html
+  int binsPerAxis = filter->GetNumberOfBinsPerAxis();
+  using IndexType = FilterType::HistogramType::IndexType;
+  double sum = 0.0;
+  double sum2 = 0.0;
+  for (unsigned int i = 0; i < Ng; i++) {
+    for (unsigned int j = 0; j < Nr; j++) {
+        IndexType index(hist->GetMeasurementVectorSize());
+        index[0] = i;
+        index[1] = j;
+        buf.str("");
+        float val = hist->GetFrequency(index);
+        sum += val;
+        sum2 += (val*val);
+        buf << val;
+        char column_name[256];
+        snprintf(column_name, 256, "tex_runl_hist_%d_%d", i, j);
+        results.insert(std::pair<std::string, std::string>(column_name, buf.str()));
+    }
+  }
+
+  // in order to compute the features for run length we need the sum (denominator)
+  // SRE
+  double nominator = 0.0;
+  for (unsigned int i = 0; i < Ng; i++) {
+    for (unsigned int j = 0; j < Nr; j++) {
+        IndexType index(hist->GetMeasurementVectorSize());
+        index[0] = i;
+        index[1] = j;
+        float val = hist->GetFrequency(index);
+        nominator += val/((i+1)*(i+1));
+    }
+  }
+  buf.str("");
+  buf << nominator / sum;
+  results.insert(std::pair<std::string, std::string>("tex_runl_sre", buf.str()));
+
+  // LRE
+  nominator = 0.0;
+  for (unsigned int i = 0; i < Ng; i++) {
+    for (unsigned int j = 0; j < Nr; j++) {
+        IndexType index(hist->GetMeasurementVectorSize());
+        index[0] = i;
+        index[1] = j;
+        float val = hist->GetFrequency(index);
+        nominator += val*((j+1)*(j+1));
+    }
+  }
+  buf.str("");
+  buf << nominator / sum;
+  results.insert(std::pair<std::string, std::string>("tex_runl_gre", buf.str()));
+
+  // GLN
+  nominator = 0.0;
+  for (unsigned int i = 0; i < Ng; i++) {
+    double sum_tmp = 0.0;
+    for (unsigned int j = 0; j < Nr; j++) {
+        IndexType index(hist->GetMeasurementVectorSize());
+        index[0] = i;
+        index[1] = j;
+        float val = hist->GetFrequency(index);
+        sum_tmp += val;
+    }
+    nominator += sum_tmp*sum_tmp;
+  }
+  buf.str("");
+  buf << nominator / sum;
+  results.insert(std::pair<std::string, std::string>("tex_runl_gln", buf.str()));
+
+  // GLNN
+  buf.str("");
+  buf << nominator / sum2;
+  results.insert(std::pair<std::string, std::string>("tex_runl_glnn", buf.str()));
+
+  // RLN
+  nominator = 0.0;
+  for (unsigned int j = 0; j < Nr; j++) {
+    double sum_tmp = 0.0;
+    for (unsigned int i = 0; i < Ng; i++) {
+        IndexType index(hist->GetMeasurementVectorSize());
+        index[0] = i;
+        index[1] = j;
+        float val = hist->GetFrequency(index);
+        sum_tmp += val;
+    }
+    nominator += sum_tmp*sum_tmp;
+  }
+  buf.str("");
+  buf << nominator / sum;
+  results.insert(std::pair<std::string, std::string>("tex_runl_rln", buf.str()));
+
+  // RLNN
+  buf.str("");
+  buf << nominator / sum2;
+  results.insert(std::pair<std::string, std::string>("tex_runl_rlnn", buf.str()));
+
+  // RP
+  nominator = 0.0;
+  for (unsigned int j = 0; j < Nr; j++) {
+    for (unsigned int i = 0; i < Ng; i++) {
+        IndexType index(hist->GetMeasurementVectorSize());
+        index[0] = i;
+        index[1] = j;
+        float val = hist->GetFrequency(index);
+        nominator += val/Np;
+    }
+  }
+  buf.str("");
+  buf << nominator;
+  results.insert(std::pair<std::string, std::string>("tex_runl_rp", buf.str()));
+
+  return results;
+}
+
 
 std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, ImageType3D::Pointer inputImage, ShapeLabelObjectType *labelObject,
                                                            int pixelMinVal, int pixelMaxVal) {
@@ -635,6 +794,7 @@ std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, Im
   mask->SetOrigin(inputImage->GetOrigin());
   mask->SetSpacing(inputImage->GetSpacing());
   mask->SetDirection(inputImage->GetDirection());
+  // use the mask as a single region of interest
   for (unsigned int pixelID = 0; pixelID < labelObject->Size(); pixelID++) {
     mask->SetPixel(labelObject->GetIndex(pixelID), 1);
   }
@@ -1059,6 +1219,26 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
         if (row.str().size() > 4)
           report->summary.push_back(row.str());
       }
+      // compute the run length information
+      std::map<std::string, std::string> textureFeatures = calcTextureRunLengthFeatureImage(image, labelObject, imageMin, imageMax);
+      std::stringstream row;
+      row.str("");
+      row << "    ";
+      int counter = 0;
+      for (std::map<std::string, std::string>::iterator it = textureFeatures.begin(); it != textureFeatures.end(); ++it) {
+        std::stringstream key;
+        key << it->first;
+        meas->insert(std::make_pair(key.str(), it->second));
+        row << key.str() << ": " << it->second << " ";
+        if ((counter + 1) % 4 == 0) {
+          report->summary.push_back(row.str());
+          row.str("");
+          row << "    ";
+        }
+        counter++;
+      }
+      if (row.str().size() > 4)
+        report->summary.push_back(row.str());
 
       report->measures.push_back(*meas);
     }
