@@ -1580,6 +1580,7 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0008|0080", InstitutionName);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription);
 
           // make a copy of this image series in the output/images/ folder
           if (1) {
