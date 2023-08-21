@@ -72,6 +72,7 @@ using json = nlohmann::json;
 using namespace boost::filesystem;
 
 json resultJSON;
+bool verbose = false;
 
 using ImageType2D = itk::Image<PixelType, 2>;
 using MaskImageType2D = itk::Image<PixelType, 2>;
@@ -203,6 +204,7 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   }
 
   std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+  std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
 
   // do this in two steps, first compute three label color channels, smooth them and alpha-blend last
   typedef float FPixelType;
@@ -238,15 +240,27 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   redIterator.GoToBegin();
   greenIterator.GoToBegin();
   blueIterator.GoToBegin();
+  // create a map for label by color 
+  std::map<int, int> labelToColor;
+  labelToColor.insert(std::make_pair<int, int>(0, 0)); // background is the first label
   while (!fusedLabelIterator.IsAtEnd() && !redIterator.IsAtEnd() && !greenIterator.IsAtEnd() && !blueIterator.IsAtEnd()) {
     // this will crash with many labels (more than in our const array)
-    auto vvvv = fusedLabelIterator.Get();
-    if (vvvv < 0 || vvvv > labelColors.size() - 1) {
-      fprintf(stderr, "Warning: mask label is too large for our colors %d\n", vvvv);
+    int vvvv = fusedLabelIterator.Get();
+    if (labelToColor.find(vvvv) == labelToColor.end()) {
+      // get the next color from labelColor2
+      if (verbose) {
+        fprintf(stdout, " Found a new label %d, set to color: %d\n", vvvv, (labelToColor.size() % (labelColors2.size()-1))+1 );
+        fflush(stdout);
+      }
+      labelToColor.insert(std::pair<int, int>(vvvv, (labelToColor.size() % (labelColors2.size()-1))+1));
     }
-    redIterator.Set(labelColors[fusedLabelIterator.Get()][0]); // values are 0..1
-    greenIterator.Set(labelColors[fusedLabelIterator.Get()][1]);
-    blueIterator.Set(labelColors[fusedLabelIterator.Get()][2]);
+    //if (vvvv < 0 || vvvv > labelColors.size() - 1) {
+    //  fprintf(stderr, "Warning: mask label is too large for our colors %d\n", vvvv);
+    //}
+    std::vector<float> col = labelColors2[labelToColor[vvvv]];
+    redIterator.Set(col[0]/255.0); // values are 0..1
+    greenIterator.Set(col[1]/255.0);
+    blueIterator.Set(col[2]/255.0);
     ++redIterator;
     ++greenIterator;
     ++blueIterator;
@@ -557,7 +571,8 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   if (!writer.Write()) {
     return;
   }
-
+  if (verbose)
+    fprintf(stdout, "done with writeSecondaryCapture...\n");
   return;
 }
 
@@ -878,6 +893,8 @@ std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, Im
 }
 
 void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries) {
+  if (verbose) 
+    fprintf(stdout, "start computing biomarkers...\n");
   typedef itk::GDCMSeriesFileNames NamesGeneratorType;
   NamesGeneratorType::Pointer nameGenerator = NamesGeneratorType::New();
 
@@ -937,10 +954,22 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   using ConnectedComponentImageFilterType = itk::ConnectedComponentImageFilter<MaskImageType, MaskImageType>;
   using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType, LabelMapType>;
 
+  if (verbose) {
+    fprintf(stdout, "compute connected components on mask image...\n"); 
+    fflush(stdout);
+  }
   auto connected = ConnectedComponentImageFilterType::New();
   connected->SetInput(mask);
   connected->Update();
+  if (verbose) {
+    fprintf(stdout, "connected components done.\n"); 
+    fflush(stdout);
+  }
 
+  if (verbose) {
+    fprintf(stdout, "compute label to shape filter...\n"); 
+    fflush(stdout);
+  }
   using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType, LabelMapType>;
   auto i2l = I2LType::New();
   i2l->SetInput(connected->GetOutput());
@@ -948,6 +977,10 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   i2l->SetComputeFeretDiameter(true);
   i2l->SetComputeOrientedBoundingBox(true);
   i2l->Update();
+  if (verbose) {
+    fprintf(stdout, "label to shape filter done.\n"); 
+    fflush(stdout);
+  }
 
   LabelMapType *labelMap = i2l->GetOutput();
 
@@ -961,10 +994,18 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   int imageMin = 0;
   int imageMax = 0;
   int imageMean = 0;
+  if (verbose) {
+    fprintf(stdout, "found %d labels\n", labelMap->GetNumberOfLabelObjects());
+  }
+
   // do the summary per label object
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
-    report->summary.push_back(std::vector<std::string>());
+    if (report->summary.size() < n+1)
+      report->summary.push_back(std::vector<std::string>());
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+    if (verbose) {
+      fprintf(stdout, "processing label %d\n", labelObject->GetLabel()); fflush(stdout);
+    }
 
     std::map<std::string, std::string> *meas = new std::map<std::string, std::string>();
 
@@ -1317,7 +1358,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  bool verbose = false;
+  verbose = false;
   if (command.GetOptionWasSet("Verbose"))
     verbose = true;
 
@@ -1759,6 +1800,8 @@ int main(int argc, char *argv[]) {
               create_directories(p_out.parent_path());
             }
             // it would be cool to add a filtered version of the labels as well, but that works only for a single label...  or?
+            // We don't have a split into different regions of interest, we should use connected components here as well
+            // we do that already in computeBiomarkers.
             writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
                                   newFusedSOPInstanceUID, verbose);
             // here is a good place to extract some measures from the masked image (mean, min, max, median, sum, intensity, histogram?)
@@ -1910,7 +1953,8 @@ int main(int argc, char *argv[]) {
         boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "reports" + boost::filesystem::path::preferred_separator +
                                         newSeriesInstanceUID.c_str();
         if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
-          // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
+          if (verbose)
+            fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
           create_directories(p_out.parent_path());
         }
         report->filename = std::string(p_out.c_str());

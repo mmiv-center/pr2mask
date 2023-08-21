@@ -131,7 +131,7 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   int py = posy;
   // start_py + 2.0 * (font_size);
 
-  memset(image_buffer, 0, HEIGHT * WIDTH);
+  memset(image_buffer, 0, sizeof(unsigned char) * HEIGHT * WIDTH);
 
   angle = radiants;
   target_height = HEIGHT;
@@ -237,8 +237,8 @@ void saveReport(Report *report) {
 
   FT_Library library;
 
-  double angle;
-  int target_height;
+  double angle = 0.0;
+  int target_height = HEIGHT;
   int n, num_chars;
 
   // int font_length = 20;
@@ -284,14 +284,12 @@ void saveReport(Report *report) {
 
     // write one line of text
     for (int line = 0; line < report->summary[roi].size(); line++) {
-      memset(image_buffer, 0, HEIGHT * WIDTH);
+      memset(image_buffer, 0, sizeof(unsigned char) * HEIGHT * WIDTH);
 
       // int lengths_min = placements[placement]["lengths"][0];
       // int lengths_max = placements[placement]["lengths"][1];
 
       int num_chars = report->summary[roi][line].size();
-      angle = 0;
-      int target_height = HEIGHT;
 
       error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
 
@@ -321,6 +319,7 @@ void saveReport(Report *report) {
       /* start at (300,200) relative to the upper left corner  */
       pen.x = 1 * 64;
       pen.y = (target_height - 20) * 64;
+
       const char *text = report->summary[roi][line].c_str();
       for (n = 0; n < num_chars; n++) {
         if (text[n] == '\n') {
@@ -377,7 +376,7 @@ void saveReport(Report *report) {
 
     // write the key fact a little bit larger on the top right
     if (1) {
-      FT_Library library;
+      FT_Library library2;
 
       double angle;
       int target_height;
@@ -396,10 +395,10 @@ void saveReport(Report *report) {
       FT_Error error;
       // gdcm::ImageReader reader;
 
-      unsigned long len = WIDTH * HEIGHT * 8;
+      unsigned long len = WIDTH * HEIGHT;
       // char *buffer = new char[len];
 
-      error = FT_Init_FreeType(&library);
+      error = FT_Init_FreeType(&library2);
 
       if (error != 0) {
         fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
@@ -419,12 +418,12 @@ void saveReport(Report *report) {
       // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
       int py = start_py + 2.0 * (font_size);
 
-      memset(image_buffer, 0, HEIGHT * WIDTH);
+      memset(image_buffer, 0, sizeof(char) * HEIGHT * WIDTH);
 
-      angle = 0;
-      target_height = HEIGHT;
+      //angle = 0;
+      //target_height = HEIGHT;
 
-      error = FT_New_Face(library, font_file.c_str(), face_index, &face);
+      error = FT_New_Face(library2, font_file.c_str(), face_index, &face);
 
       if (face == NULL) {
         fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
@@ -506,7 +505,7 @@ void saveReport(Report *report) {
       //    int px = WIDTH - ((num_chars + 2) * font_size - start_px);
       //    int py = start_py + 2.0 * (font_size);
 
-      // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
+      // // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
       addToReport(buffer, font_file, 26, std::string("mm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
       addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
     }
@@ -528,13 +527,13 @@ void saveReport(Report *report) {
           '@', '.', '.', '.', '@', '.', '.', '@', '@', '.', '.', '.',
           '@', '.', '.', '.', '.', '@', '@', '.', '@', '.', '.', '.'
     };
-    int startX = WIDTH - bitmapWidth;  // Calculate the starting X position for the bitmap
-    int startY = HEIGHT - bitmapHeight;  // Calculate the starting Y position for the bitmap
+    int startX1 = WIDTH - bitmapWidth;  // Calculate the starting X position for the bitmap
+    int startY1 = HEIGHT - bitmapHeight;  // Calculate the starting Y position for the bitmap
 
     // Copy the bitmap into the 2D image buffer
-    for (int y = 0; y < bitmapHeight; ++y) {
-        for (int x = 0; x < bitmapWidth; ++x) {
-            buffer[(startY + y) * WIDTH + (startX + x)] = bitmap[y * bitmapWidth + x];
+    for (int ytt = 0; ytt < bitmapHeight; ++ytt) {
+        for (int xtt = 0; xtt < bitmapWidth; ++xtt) {
+            buffer[(startY1 + ytt) * WIDTH + (startX1 + xtt)] = bitmap[ytt * bitmapWidth + xtt];
         }
     }
 
@@ -606,14 +605,14 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0018, 0x1016), std::string("pr2mask").c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x4000), std::string("Region of interest shape, intensity and texture measures").c_str());
 
-    im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT * sizeof(uint8_t));
-    im->GetPixelFormat().SetSamplesPerPixel(1);
+    //im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT);
+    //im->GetPixelFormat().SetSamplesPerPixel(1);
 
     gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
     im->SetDataElement(pixeldata);
     gdcm::Attribute<0x0008, 0x18> ss;
     // adjust the SOPInstanceUID string in case we have more than one report to write
-    int size_num = std::to_string(report->summary.size()).size()+1;
+    // int size_num = std::to_string(report->summary.size()).size()+1;
     std::string marker = report->SOPInstanceUID.substr(report->SOPInstanceUID.find_last_of(".") + 1);
     std::string newMarker = marker + std::to_string(roi);
     std::string newSOPInstanceUID = report->SOPInstanceUID.substr(0,report->SOPInstanceUID.find_last_of("."));
@@ -668,3 +667,4 @@ void show_image(void) {
     putchar('\n');
   }
 }
+
