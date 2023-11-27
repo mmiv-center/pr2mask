@@ -13,7 +13,6 @@
 #include "itkRGBPixel.h"
 
 #include "itkMinimumMaximumImageCalculator.h"
-#include "itkRGBPixel.h"
 #include "itkScalarImageToHistogramGenerator.h"
 
 #include "itkConnectedComponentImageFilter.h"
@@ -53,6 +52,9 @@
 #include "itkScalarImageToCooccurrenceMatrixFilter.h"
 #include "itkScalarImageToRunLengthMatrixFilter.h"
 
+#include "itkContinuousIndex.h"
+#include "itkLinearInterpolateImageFunction.h"
+
 #include "itkGDCMImageIO.h"
 
 #include "itkMetaDataDictionary.h"
@@ -61,6 +63,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/math/interpolators/catmull_rom.hpp>
 #include <codecvt>
 #include <locale> // wstring_convert
 #include <map>
@@ -76,6 +79,428 @@ bool verbose = false;
 
 using ImageType2D = itk::Image<PixelType, 2>;
 using MaskImageType2D = itk::Image<PixelType, 2>;
+
+using CPixelType = itk::RGBPixel<unsigned char>;
+using CImageType = itk::Image<CPixelType, 2>;
+using LabelType = unsigned short;
+using ShapeLabelObjectType = itk::ShapeLabelObject<LabelType, 3>;
+using LabelMapType = itk::LabelMap<ShapeLabelObjectType>;
+typedef itk::Image<PixelType, 3> ImageType3D;
+
+struct generateImageReturn
+{
+     CImageType::Pointer keyImage;
+     std::vector< std::array<int, 2> > pos;
+     std::vector< std::string > text;
+};
+
+// generate a key image based on the input image and a mask (fused with names)
+// test: 
+//     ./imageAndMask2Report data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789/input data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789_output/labels/508bc8c54546f0c3383f4325ec6fa70e310328932af7bffcf812079391445.1/ /tmp/bla -u | less
+generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution) {
+  fprintf(stdout, "Start generating a key image...\n");
+  std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
+
+  generateImageReturn returns; // store keyImage and the location and text that should be presented ontop of the image
+
+  // create a new RGB image
+  CImageType::Pointer keyImage = CImageType::New();
+  returns.keyImage = keyImage;
+
+  using RegionType = itk::ImageRegion<2>;
+  RegionType::SizeType size;
+  size[0] = resolution[0]; // 512
+  size[1] = resolution[1]; // 512
+
+  RegionType::IndexType index;
+  index.Fill(0);
+
+  RegionType region(index, size);
+  keyImage->SetRegions(region);
+
+  keyImage->Allocate();
+  keyImage->FillBuffer(itk::NumericTraits<CPixelType>::Zero);
+
+  //
+  // for each label compute the center of mass for a spline function
+  //
+  std::vector< std::array<double, 4> > centers; // three coordinates and one label value (in physical coordinates)
+  std::array<double, 3> minPos, maxPos;
+  // keep a map of all pixel coordinates with label
+  //std::map< std::string, int > coord2Label;
+
+  for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+    int label = labelObject->GetLabel();
+
+    using PT = typename ImageType3D::PointType;
+    PT floatIndexA; // a single points coordinates in world coordinates
+    PT centerHere; // we accumulate positions here to compute the center of mass for this object in 3D (world coordinates)
+    centerHere[0] = 0.0f;
+    centerHere[1] = 0.0f;
+    centerHere[2] = 0.0f;
+    itk::Index<3U> index;
+    for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+      index = labelObject->GetIndex(pixelId);
+      // if we compute the key like this we can get the label for it,
+      // not being in the map means that we have a background pixel
+      //std::string key = std::to_string(index[0]) + "_" + std::to_string(index[1]) + "_" + std::to_string(index[2]);
+      //coord2Label.insert( std::make_pair(key, label) );
+
+      // get the position in floating point from the index
+      image->TransformIndexToPhysicalPoint(index, floatIndexA);
+      centerHere[0] += floatIndexA[0];
+      centerHere[1] += floatIndexA[1];
+      centerHere[2] += floatIndexA[2];
+    }
+    centerHere[0] /= labelObject->Size(); // center of mass
+    centerHere[1] /= labelObject->Size();
+    centerHere[2] /= labelObject->Size();
+    centers.push_back(std::array<double, 4>{centerHere[0], centerHere[1], centerHere[2], (double)label}); // keep track of the label (connected component generated int value)
+    if (n == 0) { // init
+      minPos[0] = centerHere[0]; minPos[1] = centerHere[1]; minPos[2] = centerHere[2];
+      maxPos[0] = centerHere[0]; maxPos[1] = centerHere[1]; maxPos[2] = centerHere[2];
+    } else {
+      for (int i = 0; i < 3; i++) {
+        if (centerHere[i] < minPos[i]) {
+          minPos[i] = centerHere[i];
+        }
+        if (centerHere[i] > maxPos[i]) {
+          maxPos[i] = centerHere[i];
+        }
+      } 
+    }
+  }
+  // compute the extend in all three dimensions and the index of the longest axis
+  std::vector<double> dists{(maxPos[0]-minPos[0]),(maxPos[1]-minPos[1]),(maxPos[2]-minPos[2])};
+  int directionLongestAxis = std::max_element(dists.begin(), dists.end()) - dists.begin();
+  
+  if (verbose)
+    fprintf(stdout, "direction longest axis is: %d\n", directionLongestAxis);
+
+  if (verbose)
+    for (int i = 0; i < centers.size(); i++) {
+      fprintf(stdout, "centers before sort %d is : %f %f %f\n", i, centers[i][0], centers[i][1], centers[i][2]);
+    }
+
+  // we want to interpolate between the points in the right order along the directionLongestAxis
+  // TODO: find out what the correct axis is based on some DICOM tags
+  std::sort(centers.begin(), centers.end(), [directionLongestAxis](const std::array<double, 4> a, const std::array<double, 4> b) {
+    return a.at(directionLongestAxis) > b.at(directionLongestAxis);
+  });
+
+  if (verbose)
+    for (int i = 0; i < centers.size(); i++) {
+      fprintf(stdout, "centers after sort %d is : %f %f %f\n", i, centers[i][0], centers[i][1], centers[i][2]);
+    }
+
+  // add two points at the beginning and at the end to continue to the center curve
+  auto one = centers[0];
+  auto two = centers[1];
+  std::array<double, 4> newBeginning = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), -1 };
+  centers.insert(centers.begin(), newBeginning);
+
+  one = centers[centers.size()-1];
+  two = centers[centers.size()-2];
+  std::array<double, 4> newEnding = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), (double)(centers.size()+1) };
+  centers.push_back(newEnding);
+
+  // create an open spline
+  // Warning: we need at least 4 objects here
+  // If we have less than 4 but more than 2 regions we can use a linear function from start to end and hope for the best
+
+
+  // we can evaluate the spline
+  // TODO: use a linear extension in the direction of cr.prime() (tangent vector)
+  std::vector< std::vector< double > > interpolatedCenterLocations; // should be resolution[1] many, in physical space
+  if (centers.size() > 4) {
+    std::vector< std::array<double, 3> > positions; // make a copy of the first 3 dimensions
+    for (int p = 0; p < centers.size(); p++) {
+      positions.push_back( std::array<double, 3>{centers[p][0], centers[p][1], centers[p][2]});
+    }
+    boost::math::catmull_rom<std::array<double, 3>> cr(std::move(positions));
+    double dt = cr.max_parameter()/((float)resolution[1]-1.0);
+    for (int p = 0; p < resolution[1]; p++) {
+      float s = (double)p * dt;
+      auto point = cr( (double)p * dt );
+      interpolatedCenterLocations.push_back(std::vector<double>{point[0], point[1], point[2]});
+      //fprintf(stdout, "found a point at %d %f here: %f %f %f\n", p, s, point[0], point[1], point[2]);
+    }
+    //fflush(stdout);
+  } else if (centers.size() > 1) {
+    for (int p = 0; p < resolution[1]; p++) {
+      std::vector<double> point;
+      point.push_back(centers[0][0] + (centers[centers.size()-1][0] - centers[0][0])/((double)resolution[1]-1.0)  );
+      point.push_back(centers[0][1] + (centers[centers.size()-1][1] - centers[0][1])/((double)resolution[1]-1.0)  );
+      point.push_back(centers[0][2] + (centers[centers.size()-1][2] - centers[0][2])/((double)resolution[1]-1.0)  );
+      interpolatedCenterLocations.push_back(std::vector<double>{point[0], point[1], point[2]});
+    }
+  } else {
+    fprintf(stderr, "Error: no key image for less than 2 points!\n");
+  }
+
+  // now sample the image, instead of normal and binormal use one of the other two dimensions
+  // sample dimension is directionLongestAxis+1 % 3
+  std::vector<double> sampleDirection{0,0,0};
+  int sampleDimension = (directionLongestAxis-1) % 3;
+  sampleDirection[sampleDimension] = 1.0;
+  double stepSize = sqrtf( /*(interpolatedCenterLocations[1][0] - interpolatedCenterLocations[2][0]) * (interpolatedCenterLocations[1][0] - interpolatedCenterLocations[2][0]) +  
+                           (interpolatedCenterLocations[1][1] - interpolatedCenterLocations[2][1]) * (interpolatedCenterLocations[1][1] - interpolatedCenterLocations[2][1]) + */ 
+                           (interpolatedCenterLocations[1][directionLongestAxis] - interpolatedCenterLocations[2][directionLongestAxis]) * (interpolatedCenterLocations[1][directionLongestAxis] - interpolatedCenterLocations[2][directionLongestAxis]) );
+  if (verbose) {
+    fprintf(stdout, "sample Direction: %f %f %f, stepsize: %f\n", sampleDirection[0], sampleDirection[1], sampleDirection[2], stepSize);
+    fflush(stdout);
+  }
+  // now sample the output image using the coordinates system we established above
+  using IteratorTypeImage = itk::ImageRegionIteratorWithIndex< ImageType3D >;
+  // we can use coord2Label to lookup the mask values, maybe color is missing?
+  // we need to go through each pixel of the output image
+
+  RegionType outputRegion = keyImage->GetLargestPossibleRegion();
+  itk::ImageRegionIteratorWithIndex<CImageType> outputRGBIterator(keyImage, outputRegion);
+
+  //
+  // compute optimal window level for whole image, we will use the values for the curved slice
+  //
+  using ImageCalculatorFilterType = itk::MinimumMaximumImageCalculator<ImageType3D>;
+  ImageCalculatorFilterType::Pointer imageCalculatorFilter = ImageCalculatorFilterType::New();
+  imageCalculatorFilter->SetImage(image);
+  imageCalculatorFilter->Compute();
+  int minGray = imageCalculatorFilter->GetMinimum();
+  int maxGray = imageCalculatorFilter->GetMaximum();
+
+  using HistogramGeneratorType = itk::Statistics::ScalarImageToHistogramGenerator<ImageType3D>;
+  HistogramGeneratorType::Pointer histogramGenerator = HistogramGeneratorType::New();
+  histogramGenerator->SetInput(image);
+  int histogramSize = 1024;
+  histogramGenerator->SetNumberOfBins(histogramSize);
+  histogramGenerator->SetHistogramMin(minGray);
+  histogramGenerator->SetHistogramMax(maxGray);
+  histogramGenerator->Compute();
+  using HistogramType = HistogramGeneratorType::HistogramType;
+  const HistogramType *histogram = histogramGenerator->GetOutput();
+  double lowerT = 0.01;
+  double upperT = 0.999;
+  double t1 = -1;
+  double t2 = -1;
+  double sum = 0;
+  double total = 0;
+  for (unsigned int bin = 0; bin < histogramSize; bin++) {
+    total += histogram->GetFrequency(bin, 0);
+  }
+  for (unsigned int bin = 0; bin < histogramSize; bin++) {
+    double f = histogram->GetFrequency(bin, 0) / total;
+    // fprintf(stdout, "bin %d, value is %f\n", bin, f);
+    sum += f;
+    if (t1 == -1 && sum > lowerT) {
+      t1 = minGray + (maxGray - minGray) * (bin / (float)histogramSize);
+    }
+    if (t2 == -1 && sum > upperT) {
+      t2 = minGray + (maxGray - minGray) * (bin / (float)histogramSize);
+      break;
+    }
+  }
+  if (verbose) {
+    fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
+  }
+
+  // we need three 3D images for the red green and blue channel
+  // so we can blurr them before using them in the output image
+  typedef float FPixelType;
+  // typedef itk::Image<FPixelType, 2> FloatImageType;
+  using FloatImageType = itk::Image<FPixelType, 3>;
+  FloatImageType::Pointer red_channel = FloatImageType::New();
+  FloatImageType::Pointer green_channel = FloatImageType::New();
+  FloatImageType::Pointer blue_channel = FloatImageType::New();
+  ImageType3D::RegionType fusedRegion = image->GetLargestPossibleRegion();
+  red_channel->SetRegions(fusedRegion);
+  red_channel->Allocate();
+  red_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  red_channel->SetOrigin(image->GetOrigin());
+  red_channel->SetSpacing(image->GetSpacing());
+  red_channel->SetDirection(image->GetDirection());
+  green_channel->SetRegions(fusedRegion);
+  green_channel->Allocate();
+  green_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  green_channel->SetOrigin(image->GetOrigin());
+  green_channel->SetSpacing(image->GetSpacing());
+  green_channel->SetDirection(image->GetDirection());
+  blue_channel->SetRegions(fusedRegion);
+  blue_channel->Allocate();
+  blue_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  blue_channel->SetOrigin(image->GetOrigin());
+  blue_channel->SetSpacing(image->GetSpacing());
+  blue_channel->SetDirection(image->GetDirection());
+//  itk::ImageRegionIterator<FloatImageType> redIterator(red_channel, fusedRegion);
+//  itk::ImageRegionIterator<FloatImageType> greenIterator(green_channel, fusedRegion);
+//  itk::ImageRegionIterator<FloatImageType> blueIterator(blue_channel, fusedRegion);
+
+  for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); n++) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+    int label = labelObject->GetLabel(); // it might be that all regions have the same label and only n is a good choice for the color
+
+    // color is
+    std::vector<float> col = labelColors2[ (label % (labelColors2.size()-1)) +1 ];
+    itk::Index<3U> index;
+    for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+      index = labelObject->GetIndex(pixelId);
+      // set this position in all three color images, values are between 0 and 1
+      red_channel->SetPixel(index, col[0]/255.0); 
+      green_channel->SetPixel(index, col[1]/255.0);
+      blue_channel->SetPixel(index, col[2]/255.0);
+    }
+  }
+
+  // smooth all three channels independently from each other
+  using GFilterType = itk::DiscreteGaussianImageFilter<FloatImageType, FloatImageType>;
+  auto gaussFilterR = GFilterType::New();
+  gaussFilterR->SetInput(red_channel);
+  gaussFilterR->SetVariance(1.5f);
+  gaussFilterR->Update();
+  FloatImageType::Pointer smoothRed = gaussFilterR->GetOutput();
+
+  auto gaussFilterG = GFilterType::New();
+  gaussFilterG->SetInput(green_channel);
+  gaussFilterG->SetVariance(1.5f);
+  gaussFilterG->Update();
+  FloatImageType::Pointer smoothGreen = gaussFilterG->GetOutput();
+
+  auto gaussFilterB = GFilterType::New();
+  gaussFilterB->SetInput(blue_channel);
+  gaussFilterB->SetVariance(1.5f);
+  gaussFilterB->Update();
+  FloatImageType::Pointer smoothBlue = gaussFilterB->GetOutput();
+
+  itk::ImageRegionIterator<FloatImageType> redSIterator(smoothRed, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> greenSIterator(smoothGreen, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> blueSIterator(smoothBlue, fusedRegion);
+
+//  redSIterator.GoToBegin(); // 3D Volume iterators
+//  greenSIterator.GoToBegin();
+//  blueSIterator.GoToBegin();
+
+  // we want to do a tri-linear lookup in the input image
+  itk::LinearInterpolateImageFunction<ImageType3D, double>::Pointer interpolator =
+    itk::LinearInterpolateImageFunction<ImageType3D, double>::New();
+  interpolator->SetInputImage(image);
+
+  itk::LinearInterpolateImageFunction<FloatImageType, double>::Pointer interpolatorRed =
+    itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
+  interpolatorRed->SetInputImage(smoothRed);
+
+  itk::LinearInterpolateImageFunction<FloatImageType, double>::Pointer interpolatorGreen =
+    itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
+  interpolatorGreen->SetInputImage(smoothGreen);
+
+  itk::LinearInterpolateImageFunction<FloatImageType, double>::Pointer interpolatorBlue =
+    itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
+  interpolatorBlue->SetInputImage(smoothBlue);
+
+  float f = 0.7;
+  std::vector<int> centerWinner;
+  // we ignore the first and last element (added but not really centers of segmented spines)
+  for (int p = 1; p < centers.size()-1; p++) {
+    // for each of the centers, find the index of the closest point in interpolatedCenterLocations
+    float dist = 100000;
+    int winner = 0;
+    for (int q = 0; q < interpolatedCenterLocations.size(); q++) {
+      float current = sqrtf( (centers[p][0] - interpolatedCenterLocations[q][0])*(centers[p][0] - interpolatedCenterLocations[q][0]) + 
+                             (centers[p][1] - interpolatedCenterLocations[q][1])*(centers[p][1] - interpolatedCenterLocations[q][1]) + 
+                             (centers[p][2] - interpolatedCenterLocations[q][2])*(centers[p][2] - interpolatedCenterLocations[q][2]) );
+      if (dist > current) {
+        //fprintf(stdout, "found a better winner %d with smaller distance: %f\n", q, current);
+        dist = current;
+        winner = q;
+      }
+    }
+    centerWinner.push_back(winner);
+  }
+
+  for (int vert_pos = 0; vert_pos < resolution[1]; vert_pos++) {
+    // We need to find the pixel location in outputRGB that matches with the centers to be able
+    // to place the texts.
+    // The index of the matching point is now in centerWinner
+    for (int p = 0; p < centerWinner.size(); p++) {
+      if (vert_pos == centerWinner[p]) {
+        // add a text to the current location in the image (idx[0], idx[1]) 
+        // p is the centers points for which this is the closest id
+        // so centers[p][3] is the label for this point
+        //fprintf(stdout, "found a center winner at position: %d, %d\n", vert_pos, p);
+        //fflush(stdout);
+        returns.pos.push_back(std::array<int, 2>{(int)floor(resolution[0]/2.0), vert_pos});
+        returns.text.push_back(std::to_string((int)centers[p+1][3]));
+        break;
+      }
+    }
+  }
+
+
+  outputRGBIterator.GoToBegin(); // 2D Volume of curved slice
+  while (!outputRGBIterator.IsAtEnd() ) {
+    CPixelType value = outputRGBIterator.Value(); // we ignore this value, will be filled in with correct one at the end
+    CImageType::IndexType idx = outputRGBIterator.GetIndex(); // a 2D index
+    // compute for this pixel in the image the interpolated values from input and from the label
+    std::vector<double> rowCenter = interpolatedCenterLocations[idx[1]];
+    // step is idx[0], but 0 is minus half the steps
+    int step = idx[0] - floor(resolution[0]/2.0); // -256..256
+    float scaling = 1.0f; // 3*(image->GetSpacing()[directionLongestAxis ]/(1.0f * image->GetSpacing()[sampleDimension]));
+    scaling = image->GetSpacing()[sampleDimension]*image->GetSpacing()[directionLongestAxis];
+    //float scaling = (image->GetSpacing()[ sampleDimension]/(1.0f * image->GetSpacing()[directionLongestAxis ]));
+    //stepSize *= scaling;
+    //fprintf(stdout, "scaling %f step %f  * stepSize %f is: %f [%f:%f] %f\n", scaling, (float)step, stepSize, scaling * stepSize * step, -256*stepSize, 256*stepSize, scaling);
+    //fflush(stdout);
+    // the location in input we want to sample for this pixel in the output 2D image, this is in physical space
+    std::vector<double> sampleLocation{ rowCenter[0] + (step/scaling) * sampleDirection[0],
+                                        rowCenter[1] + (step/scaling) * sampleDirection[1],
+                                        rowCenter[2] + (step/scaling) * sampleDirection[2] };
+
+    // sample at this point
+    itk::ContinuousIndex<double, 3> pixel;
+    itk::ContinuousIndex<double, 3> floatIndexA;
+    pixel[0] = sampleLocation[0];
+    pixel[1] = sampleLocation[1];
+    pixel[2] = sampleLocation[2];
+
+    image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
+
+
+    // std::cout << "Value at 1.3: " << interpolator->EvaluateAtContinuousIndex(pixel) << std::endl;
+    float grayValue = 0;
+    float redValue = 0;
+    float blueValue = 0;
+    float greenValue = 0;
+    if (interpolator->IsInsideBuffer(floatIndexA)) {
+      grayValue = interpolator->EvaluateAtContinuousIndex(floatIndexA);
+      redValue = interpolatorRed->EvaluateAtContinuousIndex(floatIndexA);
+      greenValue = interpolatorGreen->EvaluateAtContinuousIndex(floatIndexA);
+      blueValue = interpolatorBlue->EvaluateAtContinuousIndex(floatIndexA);
+    } else {
+      //fprintf(stdout, "OUTSIDE region element at location %f %f %f\n", pixel[0], pixel[1], pixel[2]);
+      //fflush(stdout);
+    }
+
+    float scaledGrayValue = (grayValue - t1) / (t2-t1);
+
+    float red = f * scaledGrayValue + (1 - f) * redValue;
+    float green = f * scaledGrayValue + (1 - f) * greenValue;
+    float blue = f * scaledGrayValue + (1 - f) * blueValue;
+    //fprintf(stdout, "before clipping red, green blue: %f %f %f\n", red, green, blue);
+    red = std::min<float>(1, std::max<float>(0,red));
+    green = std::min<float>(1, std::max<float>(0,green));
+    blue = std::min<float>(1, std::max<float>(0,blue));
+    //fprintf(stdout, "red, green blue: %f %f %f\n", red, green, blue);
+    //fflush(stdout);
+    value.SetRed((int)(red * 255));
+    value.SetGreen((int)(green * 255));
+    value.SetBlue((int)(blue * 255));
+    outputRGBIterator.Set(value);
+
+    ++outputRGBIterator;
+  }
+
+  return returns;
+}
+
 
 void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
                            std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose) {
@@ -249,7 +674,7 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
     if (labelToColor.find(vvvv) == labelToColor.end()) {
       // get the next color from labelColor2
       if (verbose) {
-        fprintf(stdout, " Found a new label %d, set to color: %d\n", vvvv, (labelToColor.size() % (labelColors2.size()-1))+1 );
+        fprintf(stdout, " Found a new label %d, set to color: %zd\n", vvvv, (labelToColor.size() % (labelColors2.size()-1))+1 );
         fflush(stdout);
       }
       labelToColor.insert(std::pair<int, int>(vvvv, (labelToColor.size() % (labelColors2.size()-1))+1));
@@ -995,13 +1420,20 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   int imageMax = 0;
   int imageMean = 0;
   if (verbose) {
-    fprintf(stdout, "found %d labels\n", labelMap->GetNumberOfLabelObjects());
+    fprintf(stdout, "found %ld labels\n", labelMap->GetNumberOfLabelObjects());
   }
+
+  // compute a key image we can use in the report
+  generateImageReturn rets = generateKeyImage(image, labelMap, std::vector<int>{512,512});
+  report->keyImage = rets.keyImage;
+  report->keyImagePositions = rets.pos;
+  report->keyImageTexts = rets.text;
+  // need to add some text to this image, number and volume of this location
 
   // do the summary per label object
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
     if (report->summary.size() < n+1)
-      report->summary.push_back(std::vector<std::string>());
+      report->summary.push_back(std::vector<std::string>{report->summary[0][0]}); // TODO: add an empty line here, or get the first line of the previous/first summary
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
     if (verbose) {
       fprintf(stdout, "processing label %d\n", labelObject->GetLabel()); fflush(stdout);
@@ -1286,6 +1718,9 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
       report->measures.push_back(*meas);
     }
   }
+  if (verbose) 
+    fprintf(stdout, "end computing biomarkers...\n");
+
 }
 
 // maskImage = readMaskImage2D(mask, sliceNr);
@@ -1802,6 +2237,14 @@ int main(int argc, char *argv[]) {
             // it would be cool to add a filtered version of the labels as well, but that works only for a single label...  or?
             // We don't have a split into different regions of interest, we should use connected components here as well
             // we do that already in computeBiomarkers.
+
+            // in case we need to split the regions into connected components do this:
+            // but this does not make sense in 2D, our labels must be computed in 3D.
+            /*using ConnectedComponents = itk::ConnectedComponentImageFilter<ImageType2D, ImageType2D>;
+            ConnectedComponents::Pointer con = ConnectedComponents::New();
+            con->SetInput(binaryErode->GetOutput());
+            con->SetBackgroundValue(0);
+            con->Update(); */
             writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
                                   newFusedSOPInstanceUID, verbose);
             // here is a good place to extract some measures from the masked image (mean, min, max, median, sum, intensity, histogram?)
@@ -1942,6 +2385,7 @@ int main(int argc, char *argv[]) {
 
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
+
         int key_fact = 0;
         for (int i = 0; i < report->measures.size(); i++) {
           key_fact += std::stof(report->measures[i].find("physical_size")->second);
@@ -2035,11 +2479,10 @@ int main(int argc, char *argv[]) {
         out << res;
         out.close();
 
-
-
       }
 
     } // loop over series
+
   } catch (itk::ExceptionObject &ex) {
     std::cout << ex << std::endl;
     return EXIT_FAILURE;
