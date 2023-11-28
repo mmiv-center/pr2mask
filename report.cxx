@@ -437,6 +437,14 @@ void saveReport(Report *report) {
     memset(&kbuffer[0], 0, sizeof(char)*KWIDTH*KHEIGHT);
     memset(&kbuffer_color[0], 0, sizeof(char)*KWIDTH*KHEIGHT*3);
 
+    // add the physical size to each label
+    for (int i = 0; i < report->keyImageTexts.size(); i++) {
+      for (int j = 0; j < report->measures.size(); j++) {
+        if ( atoi(report->keyImageTexts[i].c_str())-1 == j )
+          report->keyImageTexts[i] += std::string(" - ") + report->measures[j].find("physical_size")->second + std::string(" mm3");
+      }
+    }
+
 
     //CImageType::PixelContainer *kcontainer;
     //kcontainer = report->keyImage->GetPixelContainer();

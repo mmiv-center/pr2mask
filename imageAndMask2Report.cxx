@@ -444,15 +444,15 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     // step is idx[0], but 0 is minus half the steps
     int step = idx[0] - floor(resolution[0]/2.0); // -256..256
     float scaling = 1.0f; // 3*(image->GetSpacing()[directionLongestAxis ]/(1.0f * image->GetSpacing()[sampleDimension]));
-    scaling = image->GetSpacing()[sampleDimension]*image->GetSpacing()[directionLongestAxis];
+    scaling = 512.0/2.0 * image->GetSpacing()[sampleDimension]/fusedRegion.GetSize()[sampleDimension]; //*image->GetSpacing()[directionLongestAxis];
     //float scaling = (image->GetSpacing()[ sampleDimension]/(1.0f * image->GetSpacing()[directionLongestAxis ]));
     //stepSize *= scaling;
     //fprintf(stdout, "scaling %f step %f  * stepSize %f is: %f [%f:%f] %f\n", scaling, (float)step, stepSize, scaling * stepSize * step, -256*stepSize, 256*stepSize, scaling);
     //fflush(stdout);
     // the location in input we want to sample for this pixel in the output 2D image, this is in physical space
-    std::vector<double> sampleLocation{ rowCenter[0] + (step/scaling) * sampleDirection[0],
-                                        rowCenter[1] + (step/scaling) * sampleDirection[1],
-                                        rowCenter[2] + (step/scaling) * sampleDirection[2] };
+    std::vector<double> sampleLocation{ rowCenter[0] + (step*scaling) * sampleDirection[0],
+                                        rowCenter[1] + (step*scaling) * sampleDirection[1],
+                                        rowCenter[2] + (step*scaling) * sampleDirection[2] };
 
     // sample at this point
     itk::ContinuousIndex<double, 3> pixel;
