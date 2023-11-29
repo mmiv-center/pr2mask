@@ -514,7 +514,7 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
 
-    anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(report->summary.size()).c_str()); // InstanceNumber
+    anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(0).c_str()); // InstanceNumber
     anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
 
     boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
@@ -917,7 +917,7 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
 
-    anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(roi).c_str()); // InstanceNumber
+    anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(roi+1).c_str()); // InstanceNumber
     anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
 
     boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
