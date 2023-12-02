@@ -440,8 +440,12 @@ void saveReport(Report *report) {
     // add the physical size to each label
     for (int i = 0; i < report->keyImageTexts.size(); i++) {
       for (int j = 0; j < report->measures.size(); j++) {
-        if ( atoi(report->keyImageTexts[i].c_str())-1 == j )
-          report->keyImageTexts[i] += std::string(" - ") + report->measures[j].find("physical_size")->second + std::string(" mm3");
+        if ( atoi(report->keyImageTexts[i].c_str())-1 == j ) {
+          float a = atof(report->measures[j].find("physical_size")->second.c_str()) / 1000.0;
+          std::stringstream stream;
+          stream << std::fixed << std::setprecision(3) << a;
+          report->keyImageTexts[i] += std::string(": ") + stream.str() + std::string(" cm3");
+        }
       }
     }
 
