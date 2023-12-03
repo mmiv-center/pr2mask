@@ -460,11 +460,13 @@ void saveReport(Report *report) {
 
     // draw the numbers on the kbuffer
     //addToReport512(kbuffer, font_file, 12, std::string("O"), 0, 0, 0);  
+    // warn users that this is a curvilinear reformat image
+    addToReport512(kbuffer, font_file, 6, std::string("[MMIV.no curvilinear reformat]"), -10, -20, 0);  
 
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
       //fflush(stdout);
-      addToReport512(kbuffer, font_file, 11, report->keyImageTexts[k], report->keyImagePositions[k][0]-10, report->keyImagePositions[k][1]-30, 0);  
+      addToReport512(kbuffer, font_file, 9, report->keyImageTexts[k], report->keyImagePositions[k][0]-10, report->keyImagePositions[k][1]-30, 0);  
     }
 
 
@@ -476,11 +478,33 @@ void saveReport(Report *report) {
       CImageType::IndexType kidx = kIterator.GetIndex(); 
       //fprintf(stdout, "idx %d %d: %d %d %d\n", kidx[0], kidx[1], val[0], val[1], val[2]);
       //fflush(stdout);
-      int ttt = kbuffer[kidx[1]*KWIDTH+kidx[0]];
+      int ttt = kbuffer[kidx[1]*KWIDTH+kidx[0]]; // a text color other than white is 255/255,255/237,255/160 (yellowish-orange)
+
 
       kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+0] = (val[0] |= ttt);
       kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+1] = (val[1] |= ttt);
       kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+2] = (val[2] |= ttt);
+      /*
+      float alpha_a = 1.0 / (float)ttt/255.0;
+      float alpha_b = 0.0;
+      float alpha = alpha_a + alpha_b*(1.0 - alpha_a); // alpha of text is ttt/255, alpha of b is 0
+      float C_a_r = 1.0;
+      float C_a_g = 237.0/255.0;
+      float C_a_b = 160.0/255.0;
+      float C_b_r = val[0]/255.0;
+      float C_b_g = val[1]/255.0;
+      float C_b_b = val[2]/255.0;
+      float Cr = (C_a_r * alpha_a + (C_b_r * alpha_b *(1.0 - alpha_a)))/alpha;
+      float Cg = (C_a_g * alpha_a + (C_b_g * alpha_b *(1.0 - alpha_a)))/alpha;
+      float Cb = (C_a_b * alpha_a + (C_b_b * alpha_b *(1.0 - alpha_a)))/alpha;
+      Cr = std::min<float>(1, std::max<float>(0,Cr));
+      Cg = std::min<float>(1, std::max<float>(0,Cg));
+      Cb = std::min<float>(1, std::max<float>(0,Cb));
+
+      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+0] = 255.0 * Cr;
+      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+1] = 255.0 * Cg;
+      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+2] = 255.0 * Cb; */
+
       ++kIterator;
     }
 
