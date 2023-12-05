@@ -525,11 +525,13 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
 
   std::string SeriesNumber("");
-  std::string studyID("");
+  std::string studyID(""); // this is the StudyInstanceUID
   std::string AcquisitionNumber("");
   std::string InstanceNumber("");
   std::string frameOfReferenceUID("");
+  std::string InstitutionName("");
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0080", InstitutionName);
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0011", SeriesNumber);
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0013", InstanceNumber); // keep that number
@@ -758,13 +760,15 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
 
   // now change the DICOM tags for the series and save it again
   // itk::MetaDataDictionary &dictionarySlice = r->GetOutput()->GetMetaDataDictionary();
-  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000d", studyID);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000d", studyID); // StudyInstanceUID
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0010", studyID); // StudyID  
   //  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000E", newFusedSeriesInstanceUID); // provided in call to this function
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0012", AcquisitionNumber);
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0013", InstanceNumber);
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0052", frameOfReferenceUID); // apply
   itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newFusedSOPInstanceUID);
+  itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0080", InstitutionName);
 
   // get Pixel buffer from fused
   CImageType::Pointer fusedNImage = fused;
@@ -982,6 +986,10 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   gdcm::Attribute<0x0020, 0x0052> at14;
   at14.SetValue(frameOfReferenceUID.c_str());
   ds.Replace(at14.GetAsDataElement());
+
+  gdcm::Attribute<0x0020, 0x0010> at16;
+  at16.SetValue(studyID.c_str());
+  ds.Replace(at16.GetAsDataElement());
 
   gdcm::Attribute<0x0020, 0x000e> at15;
   at15.SetValue(newFusedSeriesInstanceUID);
@@ -2103,8 +2111,9 @@ int main(int argc, char *argv[]) {
           if (AccessionNumber == "") {
             itk::ExposeMetaData<std::string>(dictionary, "0008|0050", AccessionNumber);
           }
-          if (StudyID == "") {
-            itk::ExposeMetaData<std::string>(dictionary, "0020|0010", StudyID);
+          if (StudyID == "") { // we should use the StudyInstanceUID here, will result in more cases that work back in PACS?
+            //itk::ExposeMetaData<std::string>(dictionary, "0020|0010", StudyID);
+            StudyID = StudyInstanceUID;
           }
 
           if (uidFixedFlag) {
@@ -2280,6 +2289,8 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0011", std::to_string(newSeriesNumber));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0018", newSOPInstanceUID);
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newSeriesInstanceUID);
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0010", StudyInstanceUID);
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0080", InstitutionName);
 
           // set to DERIVED\\SECONDARY
 /*          gdcm::File &fd = r->GetFile();

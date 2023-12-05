@@ -532,7 +532,11 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0028, 0x0030), "1\\1"); // PixelSpacing
 
     anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
-    anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
+
+
+    // anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str()); // we might get the wrong StudyID here from PACS, lets use the StudyInstanceUID value here
+    anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyInstanceUID.c_str());
+
     anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
     anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
     anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
@@ -540,6 +544,7 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0008, 0x0090), report->ReferringPhysician.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
 
     anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(0).c_str()); // InstanceNumber
@@ -595,6 +600,66 @@ void saveReport(Report *report) {
     gdcm::Attribute<0x0020, 0x000d> ss5;
     ss5.SetValue(report->StudyInstanceUID.c_str());
     ds.Replace(ss5.GetAsDataElement());
+
+    // we would like to store the numeric information in some kind of sequence here as well - step towards a structured report
+    if (0) {
+      //static const gdcm::Global &g = gdcm::Global::GetInstance();
+      //static const gdcm::Dicts &dicts = g.GetDicts();
+      //static const gdcm::Dict &pubdict = dicts.GetPublicDict();
+      //const gdcm::DictEntry &dictentry = pubdict.GetDictEntry(gdcm::Tag);
+      gdcm::DataElement entry;
+      entry.SetTag(gdcm::Tag(0x0040, 0x0100)); // CODE VALUE
+      entry.SetByteValue("44", (uint32_t)strlen("44"));
+      gdcm::DataElement code;
+      code.SetTag(gdcm::Tag(0x0008, 0x0104));
+      code.SetByteValue("Volume", (uint32_t)strlen("Volume")); // CODE MEANING
+
+      gdcm::SmartPointer<gdcm::SequenceOfItems> sq = new gdcm::SequenceOfItems();
+      sq->SetLengthToUndefined();
+
+      for (int measure_idx = 0; measure_idx < report->measures.size(); measure_idx++) {
+        auto m = report->measures[measure_idx];
+        std::string labelName = std::string("region ") + std::to_string(measure_idx);
+        if (strlen(labelName.c_str()) % 2 != 0)
+          labelName += std::string(" ");
+
+        for (std::map<std::string, std::string>::iterator iter = m.begin(); iter != m.end(); ++iter) {
+          gdcm::Item it;
+          it.SetVLToUndefined();
+          gdcm::DataSet &nds = it.GetNestedDataSet();
+
+          // resultJSON["measures"].push_back(*iter);
+          std::string code_meaning = iter->first;
+          std::string code_value = iter->second;
+          if (strlen(code_meaning.c_str()) % 2 != 0)
+            code_meaning += std::string(" ");
+          if (strlen(code_value.c_str()) % 2 != 0)
+            code_value += std::string(" ");
+
+          gdcm::DataElement entry;
+          entry.SetTag(gdcm::Tag(0x0008, 0x0100)); // CODE VALUE
+          entry.SetByteValue(code_value.c_str(), (uint32_t)strlen(code_value.c_str()));
+          gdcm::DataElement code;
+          code.SetTag(gdcm::Tag(0x0008, 0x0104));
+          code.SetByteValue(code_meaning.c_str(), (uint32_t)strlen(code_meaning.c_str())); // CODE MEANING
+          gdcm::DataElement region;
+          region.SetTag(gdcm::Tag(0x0008, 0x0103));
+          region.SetByteValue(labelName.c_str(), (uint32_t)strlen(labelName.c_str()));
+
+          nds.Insert(entry);
+          nds.Insert(code);
+          nds.Insert(region);
+          sq->AddItem(it);
+        }
+      }
+
+      gdcm::DataElement nn;
+      nn.SetTag(gdcm::Tag(0x0040, 0x0a730));
+      nn.SetValue(*sq);
+      nn.SetVLToUndefined();
+
+      ds.Insert(nn);
+    }
 
     gdcm::ImageWriter writer;
     writer.SetImage(*im);
@@ -934,7 +999,10 @@ void saveReport(Report *report) {
                                                     //  anon.Replace(gdcm::Tag(0x0028, 0x0103), "0");   // use unsigned 0..255
 
     anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
-    anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
+    // use a new StudyID tag
+    //anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
+    anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyInstanceUID.c_str());
+
     anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
     anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
     anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
@@ -944,6 +1012,8 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
+
 
     anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(roi+1).c_str()); // InstanceNumber
     anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
