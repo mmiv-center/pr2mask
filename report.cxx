@@ -183,7 +183,8 @@ void addToReport512(char *buffer, std::string font_file, int font_size, std::str
 
   /* the pen position in 26.6 cartesian space coordinates; */
   /* start at (300,200) relative to the upper left corner  */
-  pen.x = (num_chars * 1 * 64);
+  //pen.x = (num_chars * 1 * 64);
+  pen.x = (1 * 64);
   pen.y = (target_height - 40) * 64; // the 60 here is related to the font size!
 
   const char *text = stext.c_str();
@@ -426,6 +427,11 @@ void saveReport(Report *report) {
     return;
   }
 
+  // We would like to re-order the different regions, right now the label does not correspond with the 
+  // number in the report.
+  std::map<int, int> orderOfRegions; // For the given number of regions we expect a keyImageText to map to a specific
+                                     // label.
+
   // add the key image
   if (report->keyImage) {
     // for that keyImage    
@@ -437,18 +443,52 @@ void saveReport(Report *report) {
     memset(&kbuffer[0], 0, sizeof(char)*KWIDTH*KHEIGHT);
     memset(&kbuffer_color[0], 0, sizeof(char)*KWIDTH*KHEIGHT*3);
 
+    // to compute a z-score we can use the publication:
+    // W.Limthongkul et al. The Spine Journal 10 (2010) pages 153-158
+    // combine male and female, combine all L1 - L5, L1 - L5
+    std::vector<float> means = {38.15, 41.48, 44.21, 44.61, 42.52, 25.18, 27.37, 29.54, 30.19, 28.80 };
+    std::vector<float> stds = {  9.25,  7.78, 10.14,  9.96, 10.14,  4.31,  4.53,  4.4,   3.07,  2.63 };
+    float mean_mean = means[0];
+    float mean_stds = stds[0];
+    int sum_n = 10; // Algorithm described by Cochrane
+    for (int i = 1; i < means.size(); i++) {
+      // assume 10 for each group, we don't know how many participants participated in each measurement group
+      float tmp_mean_mean = (sum_n * mean_mean + 10 * means[i]) / (sum_n + 10);
+      // use the old mean for this computation
+      // sqrt(((n1-1)*s1*s1 + (n2-1)*s2*s2 + n1 * n2 / (n1 + n2) * (m1*m1 + m2*m2 - 2 * m1 * m2)) / (n1 + n2 -1));
+      mean_stds = sqrt(((sum_n-1)*mean_stds*mean_stds + (10-1)*stds[i]*stds[i] + (sum_n * 10) / 
+                       (sum_n + 10) * (mean_mean*mean_mean + means[i]*means[i] - 2 * mean_mean * means[i])) / (sum_n + 10 -1));
+      sum_n += 10;
+      mean_mean = tmp_mean_mean;
+      fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
+    }
+    fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
+    fflush(stdout);
+
     // add the physical size to each label
     for (int i = 0; i < report->keyImageTexts.size(); i++) {
       for (int j = 0; j < report->measures.size(); j++) {
         if ( atoi(report->keyImageTexts[i].c_str())-1 == j ) {
+          // remember what keyImageText is what label
+          orderOfRegions.insert(std::pair<int, int>(i, j));
+
           float a = atof(report->measures[j].find("physical_size")->second.c_str()) / 1000.0;
+          // z-score is
+          float zscore = (a - mean_mean) / mean_stds;
+          std::stringstream stream2;
+          stream2 << std::fixed << std::setprecision(2) << zscore;
           std::stringstream stream;
           stream << std::fixed << std::setprecision(3) << a;
-          report->keyImageTexts[i] += std::string(": ") + stream.str() + std::string(" cm3");
+          report->keyImageTexts[i] += std::string(": ") + stream.str() + std::string(" cm3 ") + std::string("z:") + stream2.str();
         }
       }
     }
-
+    // debug orderOfRegions
+    std::map<int, int>::iterator it;
+    for (it = orderOfRegions.begin(); it != orderOfRegions.end(); it++) {
+      fprintf(stdout, "Key: %d, Value: %d\n", it->first, it->second);
+      fflush(stdout);
+    }
 
     //CImageType::PixelContainer *kcontainer;
     //kcontainer = report->keyImage->GetPixelContainer();
@@ -461,12 +501,13 @@ void saveReport(Report *report) {
     // draw the numbers on the kbuffer
     //addToReport512(kbuffer, font_file, 12, std::string("O"), 0, 0, 0);  
     // warn users that this is a curvilinear reformat image
-    addToReport512(kbuffer, font_file, 6, std::string("[MMIV.no curvilinear reformat]"), -10, -20, 0);  
+    addToReport512(kbuffer, font_file, 6, std::string("[MMIV.no curvilinear reformat]"), 10, -20, 0);  
+    addToReport512(kbuffer, font_file, 6, std::string("[areas of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, 0, 0);  
 
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
       //fflush(stdout);
-      addToReport512(kbuffer, font_file, 9, report->keyImageTexts[k], report->keyImagePositions[k][0]-10, report->keyImagePositions[k][1]-30, 0);  
+      addToReport512(kbuffer, font_file, 9, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
     }
 
 
@@ -676,7 +717,7 @@ void saveReport(Report *report) {
     }
     delete[] kbuffer;
     delete[] kbuffer_color;
-  }
+  } // end of keyImage
 
   for (int roi = 0; roi < report->summary.size(); roi++) {
 //fprintf(stdout, "go over all roi in saveReport...%d\n", roi);
