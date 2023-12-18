@@ -178,10 +178,10 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   if (verbose)
     fprintf(stdout, "direction longest axis is: %d\n", directionLongestAxis);
 
-  if (verbose)
+  /*if (verbose)
     for (int i = 0; i < centers.size(); i++) {
       fprintf(stdout, "centers before sort %d is : %f %f %f\n", i, centers[i][0], centers[i][1], centers[i][2]);
-    }
+    }*/
 
   // we want to interpolate between the points in the right order along the directionLongestAxis
   // TODO: find out what the correct axis is based on some DICOM tags
@@ -189,10 +189,10 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     return a.at(directionLongestAxis) > b.at(directionLongestAxis);
   });
 
-  if (verbose)
+  /*if (verbose)
     for (int i = 0; i < centers.size(); i++) {
       fprintf(stdout, "centers after sort %d is : %f %f %f\n", i, centers[i][0], centers[i][1], centers[i][2]);
-    }
+    }*/
 
   // add two points at the beginning and at the end to continue to the center curve
   auto one = centers[0];
@@ -2075,8 +2075,9 @@ int main(int argc, char *argv[]) {
             w->SetInput(im2change);
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
+            std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
             boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "images" + boost::filesystem::path::preferred_separator +
-                                            seriesIdentifier + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                            seriesIdentifier + boost::filesystem::path::preferred_separator + filename_without_extension.c_str() + ".dcm";
             if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
               // create the output directory
               create_directories(p_out.parent_path());
@@ -2237,8 +2238,9 @@ int main(int argc, char *argv[]) {
             }
 
             boost::filesystem::path p(fileNames[sliceNr]);
+            std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
             boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "fused" + boost::filesystem::path::preferred_separator +
-                                            newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                            newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + filename_without_extension.c_str() + ".dcm";
             if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
               // create the output directory
               create_directories(p_out.parent_path());
@@ -2323,8 +2325,9 @@ int main(int argc, char *argv[]) {
           // create the output filename
           // we should have a folder for each image series
           boost::filesystem::path p(fileNames[sliceNr]);
+          std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
           boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "labels" + boost::filesystem::path::preferred_separator +
-                                          newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                          newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + filename_without_extension.c_str() + ".dcm";
           if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
             // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
             create_directories(p_out.parent_path());
