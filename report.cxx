@@ -871,6 +871,11 @@ void saveReport(Report *report) {
       float repeat_spacing = 2.0f;
       int xmax = WIDTH;
       int ymax = HEIGHT;
+      // current roi's size is
+      std::stringstream stream;
+      stream << std::fixed << std::setprecision(2) << (atof(report->measures[roi].find("physical_size")->second.c_str())/1000.0);
+      report->key_fact = stream.str();
+
       num_chars = report->key_fact.size();
 
       int px = WIDTH - ((num_chars + 2) * font_size - start_px);
@@ -965,7 +970,7 @@ void saveReport(Report *report) {
       //    int py = start_py + 2.0 * (font_size);
 
       // // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
-      addToReport(buffer, font_file, 26, std::string("mm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
+      addToReport(buffer, font_file, 26, std::string("cm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
       addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
     }
 

@@ -221,7 +221,7 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
         doc->createNewSeriesInStudy(studyUID_01);
     }
     doc->setStudyDescription("ROR Structured report");
-    doc->setSeriesDescription("Representation for SR report");
+    doc->setSeriesDescription("Structured report - radiomics");
 
     doc->setPatientName(PatientName.c_str());
     doc->setPatientID(PatientID.c_str());
@@ -253,12 +253,10 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse), OFFalse); // specify SOPInstanceUID of report
     fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str());
     doc->getCurrentRequestedProcedureEvidence().addItem(StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse );
-    fprintf(stdout, "After current requested procedure evidence\n");
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", MMIV_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
-    doc->getTree().getCurrentContentItem().setStringValue("This report image is referenced by this SR.");
-    fprintf(stdout, "After current requested procedure evidence\n");
+    doc->getTree().getCurrentContentItem().setStringValue("This report was generated on the research information system Helse Vest.");
     //doc->getTree().goUp();
 
     // TODO: measures, not just the first one into the SR
@@ -278,7 +276,9 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
                 }
             }
             doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Container, DSRTypes::AM_afterCurrent);
-            doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue((std::string("CH_3.2")).c_str(), OFFIS_CODING_SCHEME_DESIGNATOR, (std::string("Region of interest report ") + region_number).c_str()));
+            doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue((std::string("CH_3.2")).c_str(), OFFIS_CODING_SCHEME_DESIGNATOR, (std::string("Region of interest report - label ") + region_number).c_str()));
+            doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent);
+
             //doc->getTree().addContentItem(DSRTypes::RT_contains /*RT_hasConceptMod*/, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent);
             //doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CH_4.1", OFFIS_CODING_SCHEME_DESIGNATOR, "1111"));
             //doc->getTree().getCurrentContentItem().setStringValue("Region of interest BLA BLA");
