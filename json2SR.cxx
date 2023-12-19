@@ -123,6 +123,7 @@ int main(int argc, char *argv[]) {
             dataset = fileformat->getDataset();
         if (dataset != NULL) {
                 doc->getCodingSchemeIdentification().addPrivateDcmtkCodingScheme();
+                fprintf(stdout, "We are putting strings out\n");
                 if (doc->write(*dataset).good()) {
                     // now set the meta data for this document (make part of our study)
                     dataset->putAndInsertString(DCM_StudyInstanceUID, StudyInstanceUID.c_str());
@@ -145,7 +146,6 @@ int main(int argc, char *argv[]) {
                         std::string InstitutionName = meta[0]["InstitutionName"];
                         dataset->putAndInsertString(DCM_InstitutionName, InstitutionName.c_str());
                     }
-
 
                     std::cout << "Write: " << outputFilename << "..." << OFendl;
                     OFString filename(outputFilename.c_str());
@@ -195,6 +195,8 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     std::string ReportSOPInstanceUID("");
     if (meta.contains("ReportSOPInstanceUID"))
         ReportSOPInstanceUID = meta["ReportSOPInstanceUID"];
+    else
+        ReportSOPInstanceUID = "empty";
     std::string StudyInstanceUID("");
     if (meta.contains("StudyInstanceUID"))
         StudyInstanceUID = meta["StudyInstanceUID"];
@@ -228,9 +230,13 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->setReferringPhysicianName(ReferringPhysician.c_str());
     doc->setAccessionNumber(AccessionNumber.c_str());
     doc->setStudyID(StudyID.c_str());
+    if (ReferringPhysician.size() == 0) {
+        ReferringPhysician = "empty";
+    }
     //doc->setInstitutionName(InstitutionName.c_str());
 
     doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
+    // document title
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", MMIV_CODING_SCHEME_DESIGNATOR, "MMIV Research PACS Report"));
 
     doc->getTree().addContentItem(DSRTypes::RT_hasObsContext, DSRTypes::VT_PName, DSRTypes::AM_belowCurrent);
@@ -245,11 +251,14 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     // doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, "1.2.276.0.7230010.3.1.4.123456.1.1a", OFFalse));
     fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str());
     doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse), OFFalse); // specify SOPInstanceUID of report
+    fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str());
     doc->getCurrentRequestedProcedureEvidence().addItem(StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse );
+    fprintf(stdout, "After current requested procedure evidence\n");
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", MMIV_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
     doc->getTree().getCurrentContentItem().setStringValue("This report image is referenced by this SR.");
+    fprintf(stdout, "After current requested procedure evidence\n");
     //doc->getTree().goUp();
 
     // TODO: measures, not just the first one into the SR
@@ -268,7 +277,43 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
                     break;
                 }
             }
+            doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Container, DSRTypes::AM_afterCurrent);
+            doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue((std::string("CH_3.2")).c_str(), OFFIS_CODING_SCHEME_DESIGNATOR, (std::string("Region of interest report ") + region_number).c_str()));
+            //doc->getTree().addContentItem(DSRTypes::RT_contains /*RT_hasConceptMod*/, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent);
+            //doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CH_4.1", OFFIS_CODING_SCHEME_DESIGNATOR, "1111"));
+            //doc->getTree().getCurrentContentItem().setStringValue("Region of interest BLA BLA");
+            
+            //doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Container, DSRTypes::AM_belowCurrent);
             for (auto& el : measures[msid].items()) {
+
+                std::string key = el.key();
+                std::string value = el.value();
+                //doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Container, DSRTypes::AM_belowCurrent);
+                doc->getTree().addContentItem(DSRTypes::RT_contains /*RT_hasConceptMod*/, DSRTypes::VT_Text, DSRTypes::AM_belowCurrent);
+                doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue((std::string("Region_")+region_number).c_str(), MMIV_CODING_SCHEME_DESIGNATOR, (key + " [" + region_number + "]").c_str()));
+                //doc->getTree().getCurrentContentItem().setStringValue((std::string("Measure: ") + key).c_str());
+
+                doc->getTree().addChildContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text, DSRCodedEntryValue("112187", "SNM3", "Measure"));
+                // doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("112187", "SNM3", "Measure"));
+                // doc->getTree().getCurrentContentItem().setNumericValue(DSRNumericMeasurementValue(value.c_str(), CODE_UCUM_Pixels));
+                doc->getTree().getCurrentContentItem().setStringValue((value).c_str());
+                //doc->getTree().goUp();
+                doc->getTree().goUp();
+            }
+            //doc->getTree().goUp();
+            //doc->getTree().goUp();
+        }
+    } else { // if we have a single measure not an array of measures (should never happen)
+            std::string region_number = "";
+            for (auto& el : measures.items()) {
+                std::string key = el.key();
+                std::string value = el.value();
+                if (key == "region_number") {
+                    region_number = el.value();
+                    break;
+                }
+            }
+            for (auto& el : measures.items()) {
 
                 std::string key = el.key();
                 std::string value = el.value();
@@ -282,7 +327,6 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
                 doc->getTree().getCurrentContentItem().setStringValue((value).c_str());
                 doc->getTree().goUp();
             }
-        }
     }
     doc->getCodingSchemeIdentification().addItem(CODE_UCUM_CodingSchemeDesignator);
     doc->getCodingSchemeIdentification().setCodingSchemeUID(CODE_UCUM_CodingSchemeUID);
@@ -379,6 +423,8 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->getCodingSchemeIdentification().setCodingSchemeResponsibleOrganization("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
 
     */
+   fprintf(stdout, "END current requested procedure evidence\n");
+
 }
 
 
