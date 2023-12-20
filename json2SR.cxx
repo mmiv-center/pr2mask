@@ -249,9 +249,9 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Image);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_27", MMIV_CODING_SCHEME_DESIGNATOR, "Referenced image series"));
     // doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, "1.2.276.0.7230010.3.1.4.123456.1.1a", OFFalse));
-    fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str());
+    //fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str());
     doc->getTree().getCurrentContentItem().setImageReference(DSRImageReferenceValue(UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse), OFFalse); // specify SOPInstanceUID of report
-    fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str());
+    //fprintf(stdout, "Write the VALUES: \"%s\" \"%s\"\n", StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str());
     doc->getCurrentRequestedProcedureEvidence().addItem(StudyInstanceUID.c_str(), ReportSeriesInstanceUID.c_str(), UID_SecondaryCaptureImageStorage, ReportSOPInstanceUID.c_str(), OFFalse );
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
@@ -423,7 +423,7 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
     doc->getCodingSchemeIdentification().setCodingSchemeResponsibleOrganization("Mohn Medical Imaging and Visualization Centre, Bergen, Norway");
 
     */
-   fprintf(stdout, "END current requested procedure evidence\n");
+   //fprintf(stdout, "END current requested procedure evidence\n");
 
 }
 

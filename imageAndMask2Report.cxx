@@ -965,6 +965,7 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   // TODO: this does not work. We end up with the wrong ImageOrientationPatient information in the output.
   // Either we do not write these attributes for a secondary capture image or we use the correct once 
   // (for linking in Horos for example).
+  image.SetDirectionCosines(imageOrientationField);
 /*  gdcm::Attribute<0x0020, 0x0037> at9;
   at9.SetValue(imageOrientationField[0], 0);
   at9.SetValue(imageOrientationField[1], 1);
