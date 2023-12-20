@@ -98,7 +98,9 @@ struct generateImageReturn
 // test: 
 //     ./imageAndMask2Report data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789/input data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789_output/labels/508bc8c54546f0c3383f4325ec6fa70e310328932af7bffcf812079391445.1/ /tmp/bla -u | less
 generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution) {
-  fprintf(stdout, "Start generating a key image...\n");
+  if (verbose) {
+    fprintf(stdout, "Start generating a key image...\n");
+  }
   std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
 
   generateImageReturn returns; // store keyImage and the location and text that should be presented ontop of the image
@@ -248,7 +250,7 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
                            (interpolatedCenterLocations[1][1] - interpolatedCenterLocations[2][1]) * (interpolatedCenterLocations[1][1] - interpolatedCenterLocations[2][1]) + */ 
                            (interpolatedCenterLocations[1][directionLongestAxis] - interpolatedCenterLocations[2][directionLongestAxis]) * (interpolatedCenterLocations[1][directionLongestAxis] - interpolatedCenterLocations[2][directionLongestAxis]) );
   if (verbose) {
-    fprintf(stdout, "sample Direction: %f %f %f, stepsize: %f\n", sampleDirection[0], sampleDirection[1], sampleDirection[2], stepSize);
+    fprintf(stdout, "sample direction: %f %f %f, stepsize: %f\n", sampleDirection[0], sampleDirection[1], sampleDirection[2], stepSize);
     fflush(stdout);
   }
   // now sample the output image using the coordinates system we established above
@@ -790,10 +792,12 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   // fprintf(stdout, "image position patient field: %lf, %lf, %lf\n", origin3D[0], origin3D[1], origin3D[2]);
 
   std::string imageOrientation;
-  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0037", imageOrientation);
+  itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0037", imageOrientation); // image orientation patient
   double imageOrientationField[6];
   sscanf(imageOrientation.c_str(), "%lf\\%lf\\%lf\\%lf\\%lf\\%lf", &(imageOrientationField[0]), &(imageOrientationField[1]), &(imageOrientationField[2]),
          &(imageOrientationField[3]), &(imageOrientationField[4]), &(imageOrientationField[5]));
+  //fprintf(stdout, "reading 0020 0037 as string: %s\n",  imageOrientation.c_str());
+  //fprintf(stdout, "parsing 0020 0037 as %f %f %f  %f %f %f\n", imageOrientationField[0], imageOrientationField[1], imageOrientationField[2], imageOrientationField[3], imageOrientationField[4], imageOrientationField[5]);
   // fprintf(stdout, "image orientation field: %lf, %lf, %lf, %lf, %lf, %lf\n", imageOrientationField[0], imageOrientationField[1],
   //        imageOrientationField[2], imageOrientationField[3], imageOrientationField[4], imageOrientationField[5]);
 
@@ -958,14 +962,17 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   at8.SetValue(sliceThickness);
   ds.Replace(at8.GetAsDataElement());
 
-  gdcm::Attribute<0x0020, 0x0037> at9;
+  // TODO: this does not work. We end up with the wrong ImageOrientationPatient information in the output.
+  // Either we do not write these attributes for a secondary capture image or we use the correct once 
+  // (for linking in Horos for example).
+/*  gdcm::Attribute<0x0020, 0x0037> at9;
   at9.SetValue(imageOrientationField[0], 0);
   at9.SetValue(imageOrientationField[1], 1);
   at9.SetValue(imageOrientationField[2], 2);
   at9.SetValue(imageOrientationField[3], 3);
   at9.SetValue(imageOrientationField[4], 4);
   at9.SetValue(imageOrientationField[5], 5);
-  ds.Replace(at9.GetAsDataElement());
+  ds.Replace(at9.GetAsDataElement());*/
 
   // gdcm::Attribute<0x0020, 0x0013> at10;
   // at10.SetValue(imageInstance);

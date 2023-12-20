@@ -460,10 +460,13 @@ void saveReport(Report *report) {
                        (sum_n + 10) * (mean_mean*mean_mean + means[i]*means[i] - 2 * mean_mean * means[i])) / (sum_n + 10 -1));
       sum_n += 10;
       mean_mean = tmp_mean_mean;
-      fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
+      if (0)
+        fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
     }
-    fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
-    fflush(stdout);
+    if (0) {
+      fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
+      fflush(stdout);
+    }
 
     // add the physical size to each label
     for (int i = 0; i < report->keyImageTexts.size(); i++) {
@@ -484,10 +487,12 @@ void saveReport(Report *report) {
       }
     }
     // debug orderOfRegions
-    std::map<int, int>::iterator it;
-    for (it = orderOfRegions.begin(); it != orderOfRegions.end(); it++) {
-      fprintf(stdout, "Key: %d, Value: %d\n", it->first, it->second);
-      fflush(stdout);
+    if (0) {
+      std::map<int, int>::iterator it;
+      for (it = orderOfRegions.begin(); it != orderOfRegions.end(); it++) {
+        fprintf(stdout, "Key: %d, Value: %d\n", it->first, it->second);
+        fflush(stdout);
+      }
     }
 
     //CImageType::PixelContainer *kcontainer;
@@ -871,10 +876,11 @@ void saveReport(Report *report) {
       float repeat_spacing = 2.0f;
       int xmax = WIDTH;
       int ymax = HEIGHT;
-      // current roi's size is
+      // current roi's size is (overwrite the overall size in this loop)
       std::stringstream stream;
       stream << std::fixed << std::setprecision(2) << (atof(report->measures[roi].find("physical_size")->second.c_str())/1000.0);
       report->key_fact = stream.str();
+      report->key_unit = std::string("cm^3");
 
       num_chars = report->key_fact.size();
 
