@@ -2450,6 +2450,7 @@ int main(int argc, char *argv[]) {
           { "PatientID", report->PatientID },
           { "SeriesInstanceUID", report->SeriesInstanceUID },
           { "StudyInstanceUID", report->StudyInstanceUID },
+          { "StudyDescription", report->StudyDescription },
           { "FrameOfReferenceUID", report->FrameOfReferenceUID },
           { "ReferringPhysician", report->ReferringPhysician },
           { "StudyID", report->StudyID },
