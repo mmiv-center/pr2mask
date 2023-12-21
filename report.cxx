@@ -591,6 +591,7 @@ void saveReport(Report *report) {
     anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x1030), report->StudyDescription.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
 
     anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(0).c_str()); // InstanceNumber

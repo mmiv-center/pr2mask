@@ -20,6 +20,7 @@ typedef struct {
   std::string SOPInstanceUID; // 64chars max
   std::string SeriesInstanceUID;
   std::string StudyInstanceUID;
+  std::string StudyDescription;
   std::string FrameOfReferenceUID;
   std::string ReferringPhysician;
   std::string StudyID; // 16 chars max

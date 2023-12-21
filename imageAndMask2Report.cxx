@@ -2023,6 +2023,8 @@ int main(int argc, char *argv[]) {
         // remember the last InstitutionName
         std::string InstitutionName;
 
+        std::string StudyDescription;
+
         // we need to reset some attributes because they are stack specific
         PatientName = "";
         PatientID = "";
@@ -2032,6 +2034,7 @@ int main(int argc, char *argv[]) {
         AccessionNumber = "";
         StudyID = "";
         InstitutionName = "";
+        StudyDescription = "";
 
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
@@ -2075,6 +2078,7 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0008|0080", InstitutionName);
           itk::ExposeMetaData<std::string>(dictionary, "0008|103e", seriesDescription);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|1030", StudyDescription);
 
           // make a copy of this image series in the output/images/ folder
           if (1) {
@@ -2123,6 +2127,9 @@ int main(int argc, char *argv[]) {
           if (StudyID == "") { // we should use the StudyInstanceUID here, will result in more cases that work back in PACS?
             //itk::ExposeMetaData<std::string>(dictionary, "0020|0010", StudyID);
             StudyID = StudyInstanceUID;
+          }
+          if (StudyDescription == "") {
+            itk::ExposeMetaData<std::string>(dictionary, "0008|1030", StudyDescription);
           }
 
           if (uidFixedFlag) {
@@ -2381,6 +2388,7 @@ int main(int argc, char *argv[]) {
         report->StudyDate = StudyDate;
         report->StudyTime = StudyTime;
         report->AccessionNumber = AccessionNumber;
+        report->StudyDescription = StudyDescription;
         report->StudyID = StudyID;
         report->SeriesDescription = seriesDescription + " (report)";
         report->ReferringPhysician = ReferringPhysician;
