@@ -467,6 +467,9 @@ void saveReport(Report *report) {
       fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
       fflush(stdout);
     }
+    // a better setting for mean and std is - based on some example runs in BackToBasic
+    mean_mean = 23.31783;
+    mean_stds = 4.539313;
 
     // add the physical size to each label
     for (int i = 0; i < report->keyImageTexts.size(); i++) {
