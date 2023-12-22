@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <boost/filesystem.hpp>
+#include <boost/math/special_functions/erf.hpp>
 #include <gdcmFile.h>
 #include <gdcmImage.h>
 #include <math.h>
@@ -481,11 +482,26 @@ void saveReport(Report *report) {
           float a = atof(report->measures[j].find("physical_size")->second.c_str()) / 1000.0;
           // z-score is
           float zscore = (a - mean_mean) / mean_stds;
+          float perc = 100.0f * 0.5f *  (1.0f + (boost::math::erf(zscore / sqrtf(2.0)))); // or, better behaving distribution
+          //perc = 100*(/*0.5f * */ boost::math::erfc(- zscore / sqrtf(2.0)));
+          perc = 100.0f *  (1.0f + (boost::math::erf(- abs(zscore) / sqrtf(2.0))));
           std::stringstream stream2;
           stream2 << std::fixed << std::setprecision(2) << zscore;
+          std::stringstream stream3;
+          if (perc < 1)
+            stream3 << "<1";
+          else {
+            if (perc > 99) {
+              stream3 << ">99";
+            } else {
+              stream3 << std::fixed << std::setprecision(0) << perc;
+            }
+          }
+
           std::stringstream stream;
           stream << std::fixed << std::setprecision(3) << a;
-          report->keyImageTexts[i] += std::string(": ") + stream.str() + std::string(" cm3 ") + std::string("z:") + stream2.str();
+          // meaning of p is: probability of randomly drawing a volume that is further away from the mean than the z-score 
+          report->keyImageTexts[i] += std::string(": ") + stream.str() + std::string(" cm3 ") + std::string("z: ") + stream2.str() + std::string(" p: ") + stream3.str() + std::string(" %");
         }
       }
     }
@@ -515,7 +531,7 @@ void saveReport(Report *report) {
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
       //fflush(stdout);
-      addToReport512(kbuffer, font_file, 9, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
+      addToReport512(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
     }
 
 
