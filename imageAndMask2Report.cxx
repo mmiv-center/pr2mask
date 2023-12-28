@@ -67,6 +67,7 @@
 #include <codecvt>
 #include <locale> // wstring_convert
 #include <map>
+#include <zip.h>
 
 #include "mytypes.h"
 #include "report.h"
@@ -2509,6 +2510,77 @@ int main(int argc, char *argv[]) {
         std::ofstream out(json_out.c_str());
         out << res;
         out.close();
+
+        // for each output.json we should also export a data dictionary on how to interprete this file
+        // best would be a zip file that looks like the one exported from REDCap
+        // https://gist.github.com/clalancette/bb5069a09c609e2d33c9858fcc6e170e
+        // create OriginID.txt and instrument.csv, zip the content of that folder
+        boost::filesystem::path originid_file = output + boost::filesystem::path::preferred_separator + "OriginID.txt";
+        boost::filesystem::path instrument_file = output + boost::filesystem::path::preferred_separator + "instrument.csv";
+        std::ofstream out3(originid_file.c_str());
+        std::string content("PR2MASK");
+        out3 << content;
+        out3.close();
+
+        std::ofstream out4(instrument_file.c_str());
+        content = std::string("\"Variable / Field Name\",\"Form Name\",\"Section Header\",\"Field Type\",\"Field Label\",\"Choices, Calculations, OR Slider Labels\",\"Field Note\",\"Text Validation Type OR Show Slider Number\",\"Text Validation Min\",\"Text Validation Max\",Identifier?,\"Branching Logic (Show field only if...)\",\"Required Field?\",\"Custom Alignment\",\"Question Number (surveys only)\",\"Matrix Group Name\",\"Matrix Ranking?\",\"Field Annotation\"\n");
+        out4 << content;
+        // physical_size,pr2mask,,text,"Physical size",,,number,,,,,,,,,,
+        for (int meas = 0; meas < report->measures.size(); meas++) {
+          auto m = report->measures[meas];
+          // go through all the entries in that map
+          for (std::map<std::string, std::string>::iterator iter = m.begin(); iter != m.end(); ++iter) {
+            std::string key = iter->first;
+            std::string type("");
+            content = key + std::string(",pr2mask,,text,\"") + key + "\",,," + type + ",,,,,,,,,,\n";
+            out4 << content;
+          }
+          break;
+        }
+        out4.close();
+
+        // we should add those two files into a zip file (and delete them again)
+        int errorp;
+        boost::filesystem::path dictionary_file = output + boost::filesystem::path::preferred_separator + "redcap" + boost::filesystem::path::preferred_separator +
+                                             newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + "output_data_dictionary.zip";
+        // if the zip file already exists delete it first
+        if (boost::filesystem::exists(dictionary_file)) {
+          boost::filesystem::remove(dictionary_file);
+        }
+
+        zip_t *zipper = zip_open(dictionary_file.string().c_str(), ZIP_CREATE | ZIP_EXCL, &errorp);
+        if (zipper == nullptr) {
+          zip_error_t ziperror;
+          zip_error_init_with_code(&ziperror, errorp);
+          throw std::runtime_error(std::string("Failed to open output file ") + dictionary_file.string() + std::string(": ") + zip_error_strerror(&ziperror));
+        }
+        // add first file
+        zip_source_t *source = zip_source_file(zipper, originid_file.c_str(), 0, 0);
+        if (source == nullptr) {
+          throw std::runtime_error("Failed to add file to zip: " + std::string(zip_strerror(zipper)));
+        }
+        if (zip_file_add(zipper, "OriginID.txt", source, ZIP_FL_ENC_UTF_8) < 0) {
+          zip_source_free(source);
+          throw std::runtime_error("Failed to add file to zip: " + std::string(zip_strerror(zipper)));
+        }
+
+        // add second file
+        source = zip_source_file(zipper, instrument_file.c_str(), 0, 0);
+        if (source == nullptr) {
+          throw std::runtime_error("Failed to add file to zip: " + std::string(zip_strerror(zipper)));
+        }
+        if (zip_file_add(zipper, "instrument.csv", source, ZIP_FL_ENC_UTF_8) < 0) {
+          zip_source_free(source);
+          throw std::runtime_error("Failed to add file to zip: " + std::string(zip_strerror(zipper)));
+        }
+
+        zip_close(zipper);
+        if (boost::filesystem::exists(originid_file)) {
+          boost::filesystem::remove(originid_file);
+        }
+        if (boost::filesystem::exists(instrument_file)) {
+          boost::filesystem::remove(instrument_file);
+        }
 
       }
 

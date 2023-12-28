@@ -81,6 +81,14 @@ endif()
 
 find_package(DCMTK REQUIRED)
 
+find_package(LIBZIP REQUIRED)
+if (LIBZIP_FOUND)
+   MESSAGE(STATUS ">>> Found LIBZIP")
+ELSE(LIBZIP_FOUND)
+  MESSAGE(FATAL_ERROR "Cannot build app without libzip.")
+ENDIF()
+
+
 # target_link_libraries(your_target ${Boost_LIBRARIES})
 add_executable(pr2mask pr2mask.cxx report.h report.cxx itkPolylineMask2DScanlineImageFilter.hxx)
 target_include_directories(pr2mask PUBLIC ${FREETYPE_INCLUDE_DIRS})
@@ -94,7 +102,7 @@ target_link_libraries(mask2rtstruct ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb
 # imageAndMask2Report.cxx
 add_executable(imageAndMask2Report imageAndMask2Report.cxx report.h report.cxx)
 target_include_directories(imageAndMask2Report PUBLIC ${FREETYPE_INCLUDE_DIRS})
-target_link_libraries(imageAndMask2Report ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES} ${GDCM_LIBRARIES})
+target_link_libraries(imageAndMask2Report ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES} ${GDCM_LIBRARIES} libzip::zip)
 target_compile_features(imageAndMask2Report PRIVATE cxx_std_17)
 
 # structured report from json
