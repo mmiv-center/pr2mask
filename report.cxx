@@ -531,7 +531,16 @@ void saveReport(Report *report) {
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
       //fflush(stdout);
-      addToReport512(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
+      std::string::size_type pos = 0;
+      if ( ( pos = report->keyImageTexts[k].find("z:") ) != std::string::npos) {
+        std::string piece1 = report->keyImageTexts[k].substr(0, pos);
+        std::string piece2 = report->keyImageTexts[k].substr(pos);
+        //fprintf(stdout, "string: %s <-> %s", piece1.c_str(), piece2.c_str());
+        addToReport512(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
+        addToReport512(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35, report->keyImagePositions[k][1]-50, 0);  
+      } else {
+        addToReport512(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
+      }
     }
 
 
