@@ -3,7 +3,8 @@ FROM ubuntu:22.04
 RUN apt-get update -qq && apt-get install -yq build-essential \
     cmake git wget libboost-filesystem1.74-dev libboost-timer1.74-dev \
     libboost-system1.74-dev libboost-date-time1.74-dev libtbb2-dev \
-    libboost-program-options1.74-dev libfreetype-dev libxml2-dev zlib1g-dev
+    libboost-program-options1.74-dev libfreetype-dev libxml2-dev zlib1g-dev \
+    libzip-dev zipcmp zipmerge ziptool
 
 # install itk
 RUN cd /tmp/ \
