@@ -74,6 +74,7 @@ Report *getDefaultReportStruct() {
   report->measures = std::vector<std::map<std::string, std::string>>();
   report->key_fact = std::string("");
   report->key_unit = std::string("");
+  report->VersionString = std::string("");
   return report;
 }
 
@@ -527,6 +528,8 @@ void saveReport(Report *report) {
     // warn users that this is a curvilinear reformat image
     addToReport512(kbuffer, font_file, 6, std::string("[MMIV.no curvilinear reformat]"), 10, -20, 0);  
     addToReport512(kbuffer, font_file, 6, std::string("[areas of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, 0, 0);  
+    if (report->VersionString.size() > 0)
+      addToReport512(kbuffer, font_file, 6, report->VersionString, 10, 20, 0);  
 
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);

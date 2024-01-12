@@ -15,6 +15,7 @@
 
 typedef struct {
   std::string filename;
+  std::string VersionString; // provided by the user on the command line
   std::string PatientName;
   std::string PatientID;
   std::string SOPInstanceUID; // 64chars max
