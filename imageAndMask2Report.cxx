@@ -240,6 +240,7 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     }
   } else {
     fprintf(stderr, "Error: no key image for less than 2 points!\n");
+    // TODO: do a 3 axis view
   }
 
   // now sample the image, instead of normal and binormal use one of the other two dimensions
@@ -437,6 +438,20 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     }
   }
 
+  // TODO: Instead of a straight representation of the curvilinear slice we 
+  //       rather like a straightening in one image plane only (L/R).
+  //       We need to compute the center axis that is in the middle of all the points, just the mean of all sample points.
+
+  std::vector<double> centralAxis{0,0,0}; // the mid point of all centers, any axis should go throught that point (in some dimension)
+  for (int p = 0; p < centers.size(); p++) {
+      centralAxis[0] += centers[p][0];
+      centralAxis[1] += centers[p][1];
+      centralAxis[2] += centers[p][2];
+  }
+  centralAxis[0] /= centers.size();
+  centralAxis[1] /= centers.size();
+  centralAxis[2] /= centers.size();
+
 
   outputRGBIterator.GoToBegin(); // 2D Volume of curved slice
   while (!outputRGBIterator.IsAtEnd() ) {
@@ -448,14 +463,15 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     int step = idx[0] - floor(resolution[0]/2.0); // -256..256
     float scaling = 1.0f; // 3*(image->GetSpacing()[directionLongestAxis ]/(1.0f * image->GetSpacing()[sampleDimension]));
     scaling = 512.0/2.0 * image->GetSpacing()[sampleDimension]/fusedRegion.GetSize()[sampleDimension]; //*image->GetSpacing()[directionLongestAxis];
-    //float scaling = (image->GetSpacing()[ sampleDimension]/(1.0f * image->GetSpacing()[directionLongestAxis ]));
-    //stepSize *= scaling;
-    //fprintf(stdout, "scaling %f step %f  * stepSize %f is: %f [%f:%f] %f\n", scaling, (float)step, stepSize, scaling * stepSize * step, -256*stepSize, 256*stepSize, scaling);
-    //fflush(stdout);
+
+    // TODO: We would like to keep the shape of the spine and only center along the L/R orientation.
+    //       For that we need to change the rowCenter and shift it.
+
     // the location in input we want to sample for this pixel in the output 2D image, this is in physical space
-    std::vector<double> sampleLocation{ rowCenter[0] + (step*scaling) * sampleDirection[0],
-                                        rowCenter[1] + (step*scaling) * sampleDirection[1],
-                                        rowCenter[2] + (step*scaling) * sampleDirection[2] };
+    // as sampleDirection is zero in two places and 1.0 in another we can multiply to select a shift in one axis only
+    std::vector<double> sampleLocation{ (rowCenter[0] - (sampleDirection[0] * centralAxis[0])/2.0) + (step*scaling) * sampleDirection[0],
+                                        (rowCenter[1] - (sampleDirection[1] * centralAxis[1])/2.0) + (step*scaling) * sampleDirection[1],
+                                        (rowCenter[2] - (sampleDirection[2] * centralAxis[2])/2.0) + (step*scaling) * sampleDirection[2] };
 
     // sample at this point
     itk::ContinuousIndex<double, 3> pixel;
