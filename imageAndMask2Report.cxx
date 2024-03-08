@@ -174,6 +174,12 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
       } 
     }
   }
+  if (centers.size() == 0) {
+    // nothing to do, return here
+    if (verbose)
+      fprintf(stdout, "nothing to do here, no centers found\n");
+    return returns;
+  }
   // compute the extend in all three dimensions and the index of the longest axis
   std::vector<double> dists{(maxPos[0]-minPos[0]),(maxPos[1]-minPos[1]),(maxPos[2]-minPos[2])};
   int directionLongestAxis = std::max_element(dists.begin(), dists.end()) - dists.begin();
@@ -199,14 +205,27 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
 
   // add two points at the beginning and at the end to continue to the center curve
   auto one = centers[0];
-  auto two = centers[1];
-  std::array<double, 4> newBeginning = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), -1 };
-  centers.insert(centers.begin(), newBeginning);
+  // we can guarantee that we have one region here
+  if (centers.size() > 1) {
+    auto two = centers[1];
+    std::array<double, 4> newBeginning = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), -1 };
+    centers.insert(centers.begin(), newBeginning);
 
-  one = centers[centers.size()-1];
-  two = centers[centers.size()-2];
-  std::array<double, 4> newEnding = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), (double)(centers.size()+1) };
-  centers.push_back(newEnding);
+    one = centers[centers.size()-1];
+    two = centers[centers.size()-2];
+    std::array<double, 4> newEnding = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), (double)(centers.size()+1) };
+    centers.push_back(newEnding);
+  } else {
+    auto two = std::array<double, 4>{ centers[0][0], centers[0][1], centers[0][2], -1 };
+    two[directionLongestAxis] += 10.0;
+    std::array<double, 4> newBeginning = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), -1 };
+    centers.insert(centers.begin(), newBeginning);
+
+    one = centers[centers.size()-1];
+    two = centers[centers.size()-2];
+    std::array<double, 4> newEnding = std::array<double, 4>{ one[0] + (one[0] - two[0]), one[1] + (one[1] - two[1]), one[2] + (one[2] - two[2]), (double)(centers.size()+1) };
+    centers.push_back(newEnding);
+  }
 
   // create an open spline
   // Warning: we need at least 4 objects here
@@ -247,6 +266,8 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   // sample dimension is directionLongestAxis+1 % 3
   std::vector<double> sampleDirection{0,0,0};
   int sampleDimension = (directionLongestAxis-1) % 3;
+  if (sampleDimension < 0 || sampleDimension > 2)
+    sampleDimension = 0; // fallback
   sampleDirection[sampleDimension] = 1.0;
   double stepSize = sqrtf( /*(interpolatedCenterLocations[1][0] - interpolatedCenterLocations[2][0]) * (interpolatedCenterLocations[1][0] - interpolatedCenterLocations[2][0]) +  
                            (interpolatedCenterLocations[1][1] - interpolatedCenterLocations[2][1]) * (interpolatedCenterLocations[1][1] - interpolatedCenterLocations[2][1]) + */ 
@@ -420,6 +441,20 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     centerWinner.push_back(winner);
   }
 
+  // TODO: Instead of a straight representation of the curvilinear slice we 
+  //       rather like a straightening in one image plane only (L/R).
+  //       We need to compute the center axis that is in the middle of all the points, just the mean of all sample points.
+
+  std::vector<double> centralAxis{0,0,0}; // the mid point of all centers, any axis should go throught that point (in some dimension)
+  for (int p = 0; p < centers.size(); p++) {
+      centralAxis[0] += centers[p][0];
+      centralAxis[1] += centers[p][1];
+      centralAxis[2] += centers[p][2];
+  }
+  centralAxis[0] /= centers.size();
+  centralAxis[1] /= centers.size();
+  centralAxis[2] /= centers.size();
+
   for (int vert_pos = 0; vert_pos < resolution[1]; vert_pos++) {
     // We need to find the pixel location in outputRGB that matches with the centers to be able
     // to place the texts.
@@ -438,20 +473,8 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     }
   }
 
-  // TODO: Instead of a straight representation of the curvilinear slice we 
-  //       rather like a straightening in one image plane only (L/R).
-  //       We need to compute the center axis that is in the middle of all the points, just the mean of all sample points.
-
-  std::vector<double> centralAxis{0,0,0}; // the mid point of all centers, any axis should go throught that point (in some dimension)
-  for (int p = 0; p < centers.size(); p++) {
-      centralAxis[0] += centers[p][0];
-      centralAxis[1] += centers[p][1];
-      centralAxis[2] += centers[p][2];
-  }
-  centralAxis[0] /= centers.size();
-  centralAxis[1] /= centers.size();
-  centralAxis[2] /= centers.size();
-
+  float scaling = 1.0f; // 3*(image->GetSpacing()[directionLongestAxis ]/(1.0f * image->GetSpacing()[sampleDimension]));
+  scaling = 512.0/2.0 * image->GetSpacing()[sampleDimension]/fusedRegion.GetSize()[sampleDimension]; //*image->GetSpacing()[directionLongestAxis];
 
   outputRGBIterator.GoToBegin(); // 2D Volume of curved slice
   while (!outputRGBIterator.IsAtEnd() ) {
@@ -461,17 +484,16 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
     std::vector<double> rowCenter = interpolatedCenterLocations[idx[1]];
     // step is idx[0], but 0 is minus half the steps
     int step = idx[0] - floor(resolution[0]/2.0); // -256..256
-    float scaling = 1.0f; // 3*(image->GetSpacing()[directionLongestAxis ]/(1.0f * image->GetSpacing()[sampleDimension]));
-    scaling = 512.0/2.0 * image->GetSpacing()[sampleDimension]/fusedRegion.GetSize()[sampleDimension]; //*image->GetSpacing()[directionLongestAxis];
 
     // TODO: We would like to keep the shape of the spine and only center along the L/R orientation.
     //       For that we need to change the rowCenter and shift it.
 
     // the location in input we want to sample for this pixel in the output 2D image, this is in physical space
     // as sampleDirection is zero in two places and 1.0 in another we can multiply to select a shift in one axis only
-    std::vector<double> sampleLocation{ (rowCenter[0] - (sampleDirection[0] * centralAxis[0])/2.0) + (step*scaling) * sampleDirection[0],
-                                        (rowCenter[1] - (sampleDirection[1] * centralAxis[1])/2.0) + (step*scaling) * sampleDirection[1],
-                                        (rowCenter[2] - (sampleDirection[2] * centralAxis[2])/2.0) + (step*scaling) * sampleDirection[2] };
+    std::vector<double> sampleLocation{ rowCenter[0] + (step*scaling) * sampleDirection[0],
+                                        rowCenter[1] + (step*scaling) * sampleDirection[1],
+                                        rowCenter[2] + (step*scaling) * sampleDirection[2] };
+
 
     // sample at this point
     itk::ContinuousIndex<double, 3> pixel;
@@ -1453,7 +1475,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   int imageMax = 0;
   int imageMean = 0;
   if (verbose) {
-    fprintf(stdout, "found %ld labels\n", labelMap->GetNumberOfLabelObjects());
+    fprintf(stdout, "found %ld label%s\n", labelMap->GetNumberOfLabelObjects(), labelMap->GetNumberOfLabelObjects()!= 1?"s":"");
   }
 
   // compute a key image we can use in the report
@@ -2436,7 +2458,7 @@ int main(int argc, char *argv[]) {
             endString = ".8";
           report->SOPInstanceUID = newSOPInstanceUID.substr(0, 64 - 3) + endString;
         }
-
+        fflush(stdout);
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
 
