@@ -252,9 +252,9 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   } else if (centers.size() > 1) {
     for (int p = 0; p < resolution[1]; p++) {
       std::vector<double> point;
-      point.push_back(centers[0][0] + (centers[centers.size()-1][0] - centers[0][0])/((double)resolution[1]-1.0)  );
-      point.push_back(centers[0][1] + (centers[centers.size()-1][1] - centers[0][1])/((double)resolution[1]-1.0)  );
-      point.push_back(centers[0][2] + (centers[centers.size()-1][2] - centers[0][2])/((double)resolution[1]-1.0)  );
+      point.push_back(centers[0][0] + p*(centers[centers.size()-1][0] - centers[0][0])/((double)resolution[1]-1.0)  );
+      point.push_back(centers[0][1] + p*(centers[centers.size()-1][1] - centers[0][1])/((double)resolution[1]-1.0)  );
+      point.push_back(centers[0][2] + p*(centers[centers.size()-1][2] - centers[0][2])/((double)resolution[1]-1.0)  );
       interpolatedCenterLocations.push_back(std::vector<double>{point[0], point[1], point[2]});
     }
   } else {
