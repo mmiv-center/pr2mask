@@ -24,8 +24,7 @@
 
 
 
-void
-CopyDictionary(itk::MetaDataDictionary & fromDict, itk::MetaDataDictionary & toDict) {
+void CopyDictionary(itk::MetaDataDictionary & fromDict, itk::MetaDataDictionary & toDict) {
   using DictionaryType = itk::MetaDataDictionary;
 
   DictionaryType::ConstIterator itr = fromDict.Begin();
@@ -88,6 +87,7 @@ int main(int argc, char* argv[]) {
   std::string output_path = command.GetValueAsString("outdir");
 
   using MaskImageType = itk::Image<unsigned short, 3>;
+  using OutputImageType = itk::Image<unsigned short, 2>;
   typedef itk::ImageSeriesReader<MaskImageType> MaskReaderType;
   MaskReaderType::Pointer reader = MaskReaderType::New();
 
@@ -197,12 +197,13 @@ int main(int argc, char* argv[]) {
       //std::string        frameOfReferenceUID = fuid.Generate();
 
       const MaskImageType::RegionType& inputRegion = reader->GetOutput()->GetLargestPossibleRegion();
+      const MaskImageType::IndexType    start = inputRegion.GetIndex();
       const MaskImageType::SizeType& inputSize = inputRegion.GetSize();
 
       std::string studyUID;
-      std::string sopClassUID;
+      //std::string sopClassUID;
       itk::ExposeMetaData<std::string>(*inputDict, "0020|000d", studyUID);
-      itk::ExposeMetaData<std::string>(*inputDict, "0008|0016", sopClassUID);
+      //itk::ExposeMetaData<std::string>(*inputDict, "0008|0016", sopClassUID);
       dicomIO->KeepOriginalUIDOn();
 
       for (unsigned int f = 0; f < inputSize[2]; ++f) { // save one DICOM for each slice
@@ -246,14 +247,17 @@ int main(int argc, char* argv[]) {
       itksys::SystemTools::MakeDirectory(output_path);
 
       // Generate the file names
-      using SeriesWriterType = itk::ImageSeriesWriter<MaskImageType, MaskImageType>;
+      using SeriesWriterType = itk::ImageSeriesWriter<MaskImageType, OutputImageType>;
       using OutputNamesGeneratorType = itk::NumericSeriesFileNames;
       auto        outputNames = OutputNamesGeneratorType::New();
       std::string seriesFormat(output_path);
       seriesFormat = seriesFormat + "/" + "IM%d.dcm";
       outputNames->SetSeriesFormat(seriesFormat.c_str());
-      outputNames->SetStartIndex(1);
-      outputNames->SetEndIndex(inputSize[2]);
+      const unsigned int firstSlice = start[2];
+      const unsigned int lastSlice = start[2] + inputSize[2] - 1;
+      outputNames->SetStartIndex(firstSlice);
+      outputNames->SetEndIndex(lastSlice);
+      outputNames->SetIncrementIndex(1);
 
       auto seriesWriter = SeriesWriterType::New();
       seriesWriter->SetInput(medF->GetOutput());
