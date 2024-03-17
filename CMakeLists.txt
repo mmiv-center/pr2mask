@@ -111,3 +111,9 @@ target_include_directories(json2SR PUBLIC ${DCMTK_INCLUDE_DIRS})
 target_link_directories(json2SR PUBLIC ../dcmtk/dcmsr/libsrc ../dcmtk/dcmimage/libsrc ../dcmtk/dcmimgle/libsrc ../dcmtk/dcmdata/libsrc ../dcmtk/oflog/libsrc ../dcmtk/ofstd/libsrc ../dcmtk/oficonv/libsrc ../dcmtk/lib)
 target_link_libraries(json2SR dcmsr dcmimage dcmimgle dcmdata oflog ofstd oficonv xml2 z zlib ${Boost_LIBRARIES} pthread)
 #target_compile_features(json2SR PRIVATE cxx_std_17)
+
+# Interpolate labels in a mask file with gaps
+add_executable(MorphologicalContourInterpolation MorphologicalContourInterpolation.cxx)
+#target_include_directories(MorphologicalContourInterpolation PUBLIC ${DCMTK_INCLUDE_DIRS})
+#target_link_directories(MorphologicalContourInterpolation PUBLIC ../dcmtk/dcmsr/libsrc ../dcmtk/dcmimage/libsrc ../dcmtk/dcmimgle/libsrc ../dcmtk/dcmdata/libsrc ../dcmtk/oflog/libsrc ../dcmtk/ofstd/libsrc ../dcmtk/oficonv/libsrc ../dcmtk/lib)
+target_link_libraries(MorphologicalContourInterpolation ${ITK_LIBRARIES} ${Boost_LIBRARIES} pthread)
