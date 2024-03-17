@@ -85,12 +85,7 @@ int main(int argc, char* argv[]) {
     auto                      seriesItr = seriesUID.begin();
     auto                      seriesEnd = seriesUID.end();
 
-    if (seriesItr != seriesEnd) {
-      std::cout << "The directory: ";
-      std::cout << input_path << std::endl;
-      std::cout << "Contains the following DICOM Series: ";
-      std::cout << std::endl;
-    } else {
+    if (seriesItr == seriesEnd) {
       std::cout << "No DICOMs in: " << input_path << std::endl;
       return EXIT_SUCCESS;
     }
@@ -106,7 +101,7 @@ int main(int argc, char* argv[]) {
         seriesIdentifier = seriesItr->c_str();
         seriesItr++;
       }
-      std::cout << "\nReading: ";
+      std::cout << "Reading: ";
       std::cout << seriesIdentifier << std::endl;
 
       typedef std::vector<std::string> FileNamesContainer;
@@ -123,8 +118,6 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
       }
 
-      MaskImageType::Pointer mask = reader->GetOutput();
-
       using mciType = itk::MorphologicalContourInterpolator<MaskImageType>;
       mciType::Pointer mci = mciType::New();
       mci->SetInput(reader->GetOutput());
@@ -136,7 +129,6 @@ int main(int argc, char* argv[]) {
       mci->SetUseBallStructuringElement(ball);
       mci->SetAxis(axis);
       mci->SetLabel(label);
-
 
       mci->Update();
 
