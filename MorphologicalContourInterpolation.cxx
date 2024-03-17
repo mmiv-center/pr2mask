@@ -20,7 +20,6 @@ int main(int argc, char* argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
   boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
 
-
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
   std::string versionString = std::string("0.0.1.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
@@ -36,6 +35,9 @@ int main(int argc, char* argv[]) {
     "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
     "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
+
+  // convert a specific series
+  std::string convertSpecificSeries = "";
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
@@ -76,40 +78,90 @@ int main(int argc, char* argv[]) {
   nameGenerator->SetRecursive(true);
   nameGenerator->SetDirectory(input_path);
 
-  typedef std::vector<std::string> FileNamesContainer;
-  FileNamesContainer fileNames; // for the label series
-
-  // labelSeries could be the SeriesInstanceUID
-  fileNames = nameGenerator->GetFileNames();
-  reader->SetFileNames(fileNames);
-
+  // for each found series instance uid do the following
   try {
-    reader->Update();
-  } catch (itk::ExceptionObject& ex) {
+    using SeriesIdContainer = std::vector<std::string>;
+    const SeriesIdContainer& seriesUID = nameGenerator->GetSeriesUIDs();
+    auto                      seriesItr = seriesUID.begin();
+    auto                      seriesEnd = seriesUID.end();
+
+    if (seriesItr != seriesEnd) {
+      std::cout << "The directory: ";
+      std::cout << input_path << std::endl;
+      std::cout << "Contains the following DICOM Series: ";
+      std::cout << std::endl;
+    } else {
+      std::cout << "No DICOMs in: " << input_path << std::endl;
+      return EXIT_SUCCESS;
+    }
+
+    seriesItr = seriesUID.begin();
+    while (seriesItr != seriesUID.end()) {
+      std::string seriesIdentifier;
+      if (convertSpecificSeries != "") {
+        seriesIdentifier = convertSpecificSeries;
+        seriesItr = seriesUID.end();
+      } else // otherwise convert everything
+      {
+        seriesIdentifier = seriesItr->c_str();
+        seriesItr++;
+      }
+      std::cout << "\nReading: ";
+      std::cout << seriesIdentifier << std::endl;
+
+      typedef std::vector<std::string> FileNamesContainer;
+      FileNamesContainer fileNames; // for the label series
+
+      // labelSeries could be the SeriesInstanceUID
+      fileNames = nameGenerator->GetFileNames(seriesIdentifier);
+      reader->SetFileNames(fileNames);
+
+      try {
+        reader->Update();
+      } catch (itk::ExceptionObject& ex) {
+        std::cout << ex << std::endl;
+        return EXIT_FAILURE;
+      }
+
+      MaskImageType::Pointer mask = reader->GetOutput();
+
+      using mciType = itk::MorphologicalContourInterpolator<MaskImageType>;
+      mciType::Pointer mci = mciType::New();
+      mci->SetInput(reader->GetOutput());
+      bool UseDistanceTransform = true;
+      bool ball = true;
+      int axis = -1; // all axis
+      int label = 1; // use label 1 (0 would be all labels)
+      mci->SetUseDistanceTransform(UseDistanceTransform);
+      mci->SetUseBallStructuringElement(ball);
+      mci->SetAxis(axis);
+      mci->SetLabel(label);
+
+
+      mci->Update();
+
+      int smoothingRadius = 2;
+
+      using MedianType = itk::MedianImageFilter<MaskImageType, MaskImageType>;
+      MedianType::Pointer medF = MedianType::New();
+      medF->SetInput(mci->GetOutput());
+      medF->SetRadius(smoothingRadius);
+      medF->Update();
+
+      // Instead of writing a single file, we want to write out a new DICOM series
+      // but keep all the input DICOM tags in place. Or at least make them compatible
+      // with '-u'.
+
+      using WriterType = itk::ImageFileWriter<MaskImageType>;
+      WriterType::Pointer writer = WriterType::New();
+      writer->SetFileName(output_path);
+      writer->SetInput(medF->GetOutput());
+      writer->SetUseCompression(true);
+      writer->Update();
+    }
+  } catch (const itk::ExceptionObject& ex) {
     std::cout << ex << std::endl;
-    return;
+    return EXIT_FAILURE;
   }
-
-  MaskImageType::Pointer mask = reader->GetOutput();
-
-  using mciType = itk::MorphologicalContourInterpolator<MaskImageType>;
-  mciType::Pointer mci = mciType::New();
-  mci->SetInput(imageReader->GetOutput());
-  mci->Update();
-
-  int smoothingRadius = 2;
-
-  using MedianType = itk::MedianImageFilter<MaskImageType, MaskImageType>;
-  MedianType::Pointer medF = MedianType::New();
-  medF->SetInput(mci->GetOutput());
-  medF->SetRadius(smoothingRadius);
-  medF->Update();
-
-  using WriterType = itk::ImageFileWriter<MaskImageType>;
-  WriterType::Pointer writer = WriterType::New();
-  writer->SetFileName(output_path);
-  writer->SetInput(medF->GetOutput());
-  writer->SetUseCompression(true);
-  writer->Update();
   return EXIT_SUCCESS;
 }
