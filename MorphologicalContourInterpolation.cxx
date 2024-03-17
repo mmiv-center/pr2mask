@@ -7,6 +7,12 @@
 #include "itkGDCMImageIO.h"
 #include "itkGDCMSeriesFileNames.h"
 #include "itkImageSeriesReader.h"
+#include "itkImageSeriesWriter.h"
+#include "gdcmUIDGenerator.h"
+
+#include "itkNumericSeriesFileNames.h"
+
+
 
 #include "metaCommand.h"
 #include <boost/algorithm/string.hpp>
@@ -15,6 +21,30 @@
 #include <codecvt>
 #include <locale> // wstring_convert
 #include <map>
+
+
+
+void
+CopyDictionary(itk::MetaDataDictionary & fromDict, itk::MetaDataDictionary & toDict) {
+  using DictionaryType = itk::MetaDataDictionary;
+
+  DictionaryType::ConstIterator itr = fromDict.Begin();
+  DictionaryType::ConstIterator end = fromDict.End();
+  using MetaDataStringType = itk::MetaDataObject<std::string>;
+
+  while (itr != end) {
+    itk::MetaDataObjectBase::Pointer entry = itr->second;
+
+    MetaDataStringType::Pointer entryvalue = dynamic_cast<MetaDataStringType *>(entry.GetPointer());
+    if (entryvalue) {
+      std::string tagkey = itr->first;
+      std::string tagvalue = entryvalue->GetMetaDataObjectValue();
+      itk::EncapsulateMetaData<std::string>(toDict, tagkey, tagvalue);
+    }
+    ++itr;
+  }
+}
+
 
 int main(int argc, char* argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
@@ -144,12 +174,101 @@ int main(int argc, char* argv[]) {
       // but keep all the input DICOM tags in place. Or at least make them compatible
       // with '-u'.
 
-      using WriterType = itk::ImageFileWriter<MaskImageType>;
-      WriterType::Pointer writer = WriterType::New();
-      writer->SetFileName(output_path);
-      writer->SetInput(medF->GetOutput());
-      writer->SetUseCompression(true);
-      writer->Update();
+      if (0) {
+        // if we would want to save a single file output
+        using WriterType = itk::ImageFileWriter<MaskImageType>;
+        WriterType::Pointer writer = WriterType::New();
+        writer->SetFileName(output_path);
+        writer->SetInput(medF->GetOutput());
+        writer->SetUseCompression(true);
+        writer->Update();
+      }
+      //
+      // save as individual DICOM files again
+      //
+      MaskReaderType::DictionaryRawPointer inputDict = (*(reader->GetMetaDataDictionaryArray()))[0];
+      MaskReaderType::DictionaryArrayType  outputArray;
+
+      gdcm::UIDGenerator suid;
+      suid.SetRoot("1.3.6.1.4.1.45037");
+      std::string        seriesUID = suid.Generate();
+      //gdcm::UIDGenerator fuid;
+      //fuid.SetRoot("1.3.6.1.4.1.45037");
+      //std::string        frameOfReferenceUID = fuid.Generate();
+
+      const MaskImageType::RegionType& inputRegion = reader->GetOutput()->GetLargestPossibleRegion();
+      const MaskImageType::SizeType& inputSize = inputRegion.GetSize();
+
+      std::string studyUID;
+      std::string sopClassUID;
+      itk::ExposeMetaData<std::string>(*inputDict, "0020|000d", studyUID);
+      itk::ExposeMetaData<std::string>(*inputDict, "0008|0016", sopClassUID);
+      dicomIO->KeepOriginalUIDOn();
+
+      for (unsigned int f = 0; f < inputSize[2]; ++f) { // save one DICOM for each slice
+        inputDict = (*(reader->GetMetaDataDictionaryArray()))[f];
+
+        // Create a new dictionary for this slice
+        auto dict = new MaskReaderType::DictionaryType;
+
+        // Copy the dictionary from the first slice
+        CopyDictionary(*inputDict, *dict);
+
+        // Set the UID's for the study, series, SOP  and frame of reference
+        itk::EncapsulateMetaData<std::string>(*dict, "0020|000d", studyUID);
+        itk::EncapsulateMetaData<std::string>(*dict, "0020|000e", seriesUID);
+
+        std::string sopInstanceUID = suid.Generate();
+        itk::EncapsulateMetaData<std::string>(*dict, "0008|0018", sopInstanceUID);
+        itk::EncapsulateMetaData<std::string>(*dict, "0002|0003", sopInstanceUID);
+
+        std::string oldSeriesDesc;
+        itk::ExposeMetaData<std::string>(*inputDict, "0008|103e", oldSeriesDesc);
+
+        std::ostringstream value;
+        value.str("");
+        value << oldSeriesDesc << " (interpolated)";
+        unsigned lengthDesc = value.str().length();
+        std::string seriesDesc(value.str(), 0, lengthDesc > 64 ? 64 : lengthDesc);
+        itk::EncapsulateMetaData<std::string>(*dict, "0008|103e", seriesDesc);
+
+        std::string oldSeriesNumber;
+        itk::ExposeMetaData<std::string>(*inputDict, "0020|0011", oldSeriesNumber);
+        value.str("");
+        value << oldSeriesNumber << "1";
+        itk::EncapsulateMetaData<std::string>(*dict, "0020|0011", value.str());
+
+        // Save the dictionary
+        outputArray.push_back(dict);
+      }
+
+      // Make the output directory and generate the file names.
+      itksys::SystemTools::MakeDirectory(output_path);
+
+      // Generate the file names
+      using SeriesWriterType = itk::ImageSeriesWriter<MaskImageType, MaskImageType>;
+      using OutputNamesGeneratorType = itk::NumericSeriesFileNames;
+      auto        outputNames = OutputNamesGeneratorType::New();
+      std::string seriesFormat(output_path);
+      seriesFormat = seriesFormat + "/" + "IM%d.dcm";
+      outputNames->SetSeriesFormat(seriesFormat.c_str());
+      outputNames->SetStartIndex(1);
+      outputNames->SetEndIndex(inputSize[2]);
+
+      auto seriesWriter = SeriesWriterType::New();
+      seriesWriter->SetInput(medF->GetOutput());
+
+      seriesWriter->SetImageIO(dicomIO);
+      seriesWriter->SetFileNames(outputNames->GetFileNames());
+      seriesWriter->SetMetaDataDictionaryArray(&outputArray);
+      try {
+        seriesWriter->Update();
+      } catch (const itk::ExceptionObject & excp) {
+        std::cerr << "Exception thrown while writing the series " << std::endl;
+        std::cerr << excp << std::endl;
+        return EXIT_FAILURE;
+      }
+
     }
   } catch (const itk::ExceptionObject& ex) {
     std::cout << ex << std::endl;
