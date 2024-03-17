@@ -387,7 +387,7 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   }
 }
 
-void saveReport(Report *report) {
+void saveReport(Report *report, float mean_mean, float mean_stds) {
 
   std::string font_file = "Menlo.ttf";
   if (const char *env_p = std::getenv("REPORT_FONT_PATH")) {
@@ -445,33 +445,35 @@ void saveReport(Report *report) {
     memset(&kbuffer[0], 0, sizeof(char)*KWIDTH*KHEIGHT);
     memset(&kbuffer_color[0], 0, sizeof(char)*KWIDTH*KHEIGHT*3);
 
-    // to compute a z-score we can use the publication:
-    // W.Limthongkul et al. The Spine Journal 10 (2010) pages 153-158
-    // combine male and female, combine all L1 - L5, L1 - L5
-    std::vector<float> means = {38.15, 41.48, 44.21, 44.61, 42.52, 25.18, 27.37, 29.54, 30.19, 28.80 };
-    std::vector<float> stds = {  9.25,  7.78, 10.14,  9.96, 10.14,  4.31,  4.53,  4.4,   3.07,  2.63 };
-    float mean_mean = means[0];
-    float mean_stds = stds[0];
-    int sum_n = 10; // Algorithm described by Cochrane
-    for (int i = 1; i < means.size(); i++) {
-      // assume 10 for each group, we don't know how many participants participated in each measurement group
-      float tmp_mean_mean = (sum_n * mean_mean + 10 * means[i]) / (sum_n + 10);
-      // use the old mean for this computation
-      // sqrt(((n1-1)*s1*s1 + (n2-1)*s2*s2 + n1 * n2 / (n1 + n2) * (m1*m1 + m2*m2 - 2 * m1 * m2)) / (n1 + n2 -1));
-      mean_stds = sqrt(((sum_n-1)*mean_stds*mean_stds + (10-1)*stds[i]*stds[i] + (sum_n * 10) / 
-                       (sum_n + 10) * (mean_mean*mean_mean + means[i]*means[i] - 2 * mean_mean * means[i])) / (sum_n + 10 -1));
-      sum_n += 10;
-      mean_mean = tmp_mean_mean;
-      if (0)
-        fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
-    }
     if (0) {
-      fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
-      fflush(stdout);
+      // to compute a z-score we can use the publication:
+      // W.Limthongkul et al. The Spine Journal 10 (2010) pages 153-158
+      // combine male and female, combine all L1 - L5, L1 - L5
+      std::vector<float> means = {38.15, 41.48, 44.21, 44.61, 42.52, 25.18, 27.37, 29.54, 30.19, 28.80 };
+      std::vector<float> stds = {  9.25,  7.78, 10.14,  9.96, 10.14,  4.31,  4.53,  4.4,   3.07,  2.63 };
+      float mean_mean = means[0];
+      float mean_stds = stds[0];
+      int sum_n = 10; // Algorithm described by Cochrane
+      for (int i = 1; i < means.size(); i++) {
+        // assume 10 for each group, we don't know how many participants participated in each measurement group
+        float tmp_mean_mean = (sum_n * mean_mean + 10 * means[i]) / (sum_n + 10);
+        // use the old mean for this computation
+        // sqrt(((n1-1)*s1*s1 + (n2-1)*s2*s2 + n1 * n2 / (n1 + n2) * (m1*m1 + m2*m2 - 2 * m1 * m2)) / (n1 + n2 -1));
+        mean_stds = sqrt(((sum_n-1)*mean_stds*mean_stds + (10-1)*stds[i]*stds[i] + (sum_n * 10) / 
+                        (sum_n + 10) * (mean_mean*mean_mean + means[i]*means[i] - 2 * mean_mean * means[i])) / (sum_n + 10 -1));
+        sum_n += 10;
+        mean_mean = tmp_mean_mean;
+        if (0)
+          fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
+      }
+      if (0) {
+        fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
+        fflush(stdout);
+      }
+      // a better setting for mean and std is - based on some example runs in BackToBasic
+      mean_mean = 23.31783;
+      mean_stds = 4.539313;
     }
-    // a better setting for mean and std is - based on some example runs in BackToBasic
-    mean_mean = 23.31783;
-    mean_stds = 4.539313;
 
     // add the physical size to each label
     for (int i = 0; i < report->keyImageTexts.size(); i++) {

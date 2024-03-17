@@ -42,6 +42,7 @@ typedef struct {
 } Report;
 
 Report *getDefaultReportStruct();
-void saveReport(Report *report);
+void saveReport(Report *report, float mean_mean = 23.31783, float mean_stds = 4.539313);
+
 
 #endif
