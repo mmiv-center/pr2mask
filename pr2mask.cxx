@@ -26,7 +26,6 @@
 
 #include "itkDiscreteGaussianImageFilter.h"
 
-
 #include "gdcmAnonymizer.h"
 #include "gdcmAttribute.h"
 #include "gdcmDataSetHelper.h"
@@ -88,6 +87,7 @@ struct Polygon {
   std::string Filename; // the name of the DICOM file
   std::string PatientName;
   std::string PatientID;
+  std::string ContributionDateTime; // 0018,a002 (when the PR object was list updated)
 };
 
 using ImageType2D = itk::Image<PixelType, 2>;
@@ -606,6 +606,42 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   return;
 }
 
+// remove all polygons for a series that are old, based on ContributionDateTime
+void keepOnlyLast(std::vector<Polygon> *storage) {
+  // keep a list of all SeriesInstanceUIDs and their newest ContributionDateTime
+  std::map<std::string, std::string> seriesByContributionDateTime;
+  for (int i = 0; i < storage->size(); i++) {
+    std::string ReferencedSeriesInstanceUID = (*storage)[i].ReferencedSeriesInstanceUID;
+    std::string d = (*storage)[i].ContributionDateTime;
+    if (auto p = seriesByContributionDateTime.find(ReferencedSeriesInstanceUID); p == seriesByContributionDateTime.end()) {
+      seriesByContributionDateTime.insert(std::pair<std::string, std::string>{ReferencedSeriesInstanceUID,d});
+    } else {
+      // already in there, is our date newer?
+      std::string d_in_there = p->second;
+      if (d > d_in_there) {
+        // we found a newer date (larger string), use that date for this ReferencedSeriesInstanceUID
+        seriesByContributionDateTime[p->first] = d;
+      }
+    }
+  }
+  // now remove all non-matching storage entries
+  std::vector<Polygon>::iterator iter;
+  for (iter = storage->begin(); iter != storage->end();) {
+    std::string ReferencedSeriesInstanceUID = iter->ReferencedSeriesInstanceUID;
+    std::string ContributionDateTime = iter->ContributionDateTime;
+    if (auto p = seriesByContributionDateTime.find(ReferencedSeriesInstanceUID); p != seriesByContributionDateTime.end()) {
+      std::string d = p->second;
+      if (d != ContributionDateTime) {
+        // must be an old entry, delete it now
+        iter = storage->erase(iter);
+        continue;
+      }
+    }
+    ++iter;
+  } 
+}
+
+
 bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
 void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
@@ -620,6 +656,12 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     // this could be a folder ... don't try to read folders as files
     if (boost::filesystem::is_directory(dir->path())) {
       continue; // ignore
+    }
+
+    // filter out some files that we expect but that are not DICOM
+    boost::filesystem::path p(filename);
+    if (p.extension() == ".json") {
+      continue; // ignore this file
     }
 
     // Instantiate the reader:
@@ -645,6 +687,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     std::string Modality;
     std::string PatientID;
     std::string PatientName;
+    std::string ContributionDateTime; 
 
     const gdcm::Tag graphicType(0x0070, 0x0023);              // GraphicType
     const gdcm::Tag numberOfGraphicPoints(0x0070, 0x0021);    // NumberOfGraphicPoints
@@ -654,6 +697,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     const gdcm::Tag unformattedTextValue(0x0070, 0x0006);     // unformattedTextValue
     const gdcm::Tag referencedImageSequence(0x0008, 0x1140);  // ReferencedImageSequence its inside 0x0070,0x0001
     const gdcm::Tag referencedSOPInstanceUID(0x0008, 0x1155); // ReferencedSOPInstanceUID
+    const gdcm::Tag contributionDateTime(0x0018, 0xA002);     // ContributionDateTime
 
     gdcm::Attribute<0x0008, 0x0060> modalityAttr;
     modalityAttr.Set(ds);
@@ -691,6 +735,38 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     StudyInstanceUID = studyinstanceuidAttr.GetValue();
     // fprintf(stdout, " found StudyInstanceUID: %s\n", StudyInstanceUID.c_str());
 
+    // get the ContributionDateTime for Sectra from sequence 0018,a001 item 0040,a170
+    // (0018,a001) SQ (Sequence with explicit length #=1)      # 148, 1 Unknown Tag & Data
+    //  (fffe,e000) na (Item with explicit length #=5)          # 140, 1 Item
+    //    (0008,0070) LO [SECTRA]                                 #   6, 1 Unknown Tag & Data
+    //    (0008,0080) LO [-]                                      #   2, 1 Unknown Tag & Data
+    //    (0008,1010) SH [DICOM_QR_SCP]                           #  12, 1 Unknown Tag & Data
+    //    (0018,a002) DT [20240314170104]                         #  14, 1 Unknown Tag & Data
+    //    (0040,a170) SQ (Sequence with explicit length #=1)      #  62, 1 Unknown Tag & Data
+    //      (fffe,e000) na (Item with explicit length #=3)          #  54, 1 Item
+    //        (0008,0100) SH [109103]                                 #   6, 1 Unknown Tag & Data
+    //        (0008,0102) SH [DCM]                                    #   4, 1 Unknown Tag & Data
+    //        (0008,0104) LO [Modifying Equipment]                    #  20, 1 Unknown Tag & Data
+    //      (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+    //    (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+    //  (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+    //(fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+    const gdcm::DataElement &de_sectra = ds.GetDataElement(gdcm::Tag(0x0018, 0xA001));
+    // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
+    gdcm::SmartPointer<gdcm::SequenceOfItems> sqi2 = de_sectra.GetValueAsSQ();
+    if (sqi2) {
+      gdcm::SequenceOfItems::SizeType nitems = sqi2->GetNumberOfItems();
+      // fprintf(stdout, "found %lu items\n", nitems);
+      for (int itemNr = 1; itemNr <= nitems; itemNr++) { // we should create our polys at this level....
+        gdcm::Item &item = sqi2->GetItem(itemNr);
+        gdcm::DataSet &subds = item.GetNestedDataSet();
+
+        gdcm::Attribute<0x0018, 0xA002> contributionDateTimeAttr;
+        contributionDateTimeAttr.Set(subds);
+        ContributionDateTime = contributionDateTimeAttr.GetValue();
+      }
+    }
+
     // get the StudyInstanceUID
     gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
     seriesinstanceuidAttr.Set(ds);
@@ -721,6 +797,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
 
         Polygon poly;
         poly.StudyInstanceUID = boost::algorithm::trim_copy(StudyInstanceUID);
+        poly.ContributionDateTime = boost::algorithm::trim_copy(ContributionDateTime);
         // the string above might contain a utf-8 version of a null character
         if (poly.StudyInstanceUID.back() == '\0')
           poly.StudyInstanceUID.replace(poly.StudyInstanceUID.end() - 1, poly.StudyInstanceUID.end(), "");
@@ -1483,7 +1560,7 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  std::string versionString = std::string("0.0.3.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  std::string versionString = std::string("0.0.4.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
   command.SetVersion(versionString.c_str());
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");
@@ -1494,6 +1571,11 @@ int main(int argc, char *argv[]) {
   command.SetOption("SeriesName", "n", false, "Select series by series name (if more than one series is present).");
   command.SetOptionLongTag("SeriesName", "seriesname");
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
+
+  // allow for interpolation between slices (assumes a single object)
+  
+  command.SetOption("Interpolation", "i", false, "Interpolate the 3D shape if slices are missing.");
+  command.SetOptionLongTag("Interpolation", "interpolation");
 
   command.SetOption(
       "UIDFixed", "u", false,
@@ -1518,6 +1600,11 @@ int main(int argc, char *argv[]) {
 
   if (input.size() == 0 || output.size() == 0) {
     return 1;
+  }
+
+  bool interpolate = false;;
+  if (command.GetOptionWasSet("Interpolation")) {
+    interpolate = true;
   }
 
   bool verbose = false;
@@ -1572,6 +1659,11 @@ int main(int argc, char *argv[]) {
     exit(-1);
   }
 
+  // only keep the last PR by series based on ContributionDateTime
+  keepOnlyLast(&storage);
+  if (verbose)
+    fprintf(stdout, "After removing older presentation state objects we have %lu remaining polylines.\n", storage.size());
+
   // loop over storage and append to resultJSON
   resultJSON["POLYLINES"] = json::array();
   for (int i = 0; i < storage.size(); i++) {
@@ -1582,6 +1674,7 @@ int main(int argc, char *argv[]) {
     entry["StudyInstanceUID"] = storage[i].StudyInstanceUID;
     entry["SeriesInstanceUID"] = storage[i].SeriesInstanceUID;
     entry["ReferencedSeriesInstanceUID"] = storage[i].ReferencedSeriesInstanceUID;
+    entry["ContributionDateTime"] = storage[i].ContributionDateTime;
 
     std::string a = storage[i].UnformattedTextValue;
     stripUnicode(a);
@@ -1694,7 +1787,13 @@ int main(int argc, char *argv[]) {
         AccessionNumber = "";
         StudyID = "";
 
-        //  loop over all files in this series
+        // if we need to interpolate we should create a 3D mask in the next loop, 
+        // interpolate after the loop and overwrite the files again.
+        // Maybe better to have 2 loops, one where we create a 3D volume and another
+        // where we export fused images etc..
+        //    https://insight-journal.org/browse/publication/977
+
+        //  loop over all files in this series (are these files sorted by slice location?)
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
           // using ImageType2D = itk::Image<PixelType, 2>;
           typedef itk::ImageFileReader<ImageType2D> Reader2DType;
@@ -1801,6 +1900,9 @@ int main(int argc, char *argv[]) {
           for (int i = 0; i < storage.size(); i++) {
             if (storage[i].ReferencedSOPInstanceUID == SOPInstanceUID) {
               // for this slice we should treat this polygon
+              // Issue might be that each poly has its own ContributionDateTime.
+              // We should use only one of these, the one with the latest contribution date time.
+              // Keep them if they have the same ContributionDateTime. Maybe best if we filter storage.
               polyIds.push_back(i);
             }
           }
