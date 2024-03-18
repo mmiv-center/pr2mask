@@ -1573,10 +1573,8 @@ int main(int argc, char *argv[]) {
   command.AddOptionField("SeriesName", "seriesname", MetaCommand::STRING, false);
 
   // allow for interpolation between slices (assumes a single object)
+  // instead do this in a separate command (MorphologicalContourInterpolation)
   
-  command.SetOption("Interpolation", "i", false, "Interpolate the 3D shape if slices are missing.");
-  command.SetOptionLongTag("Interpolation", "interpolation");
-
   command.SetOption(
       "UIDFixed", "u", false,
       "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
@@ -1600,11 +1598,6 @@ int main(int argc, char *argv[]) {
 
   if (input.size() == 0 || output.size() == 0) {
     return 1;
-  }
-
-  bool interpolate = false;;
-  if (command.GetOptionWasSet("Interpolation")) {
-    interpolate = true;
   }
 
   bool verbose = false;
