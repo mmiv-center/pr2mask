@@ -24,7 +24,7 @@
 
 
 
-void CopyDictionary(itk::MetaDataDictionary & fromDict, itk::MetaDataDictionary & toDict) {
+void CopyDictionary(itk::MetaDataDictionary& fromDict, itk::MetaDataDictionary& toDict) {
   using DictionaryType = itk::MetaDataDictionary;
 
   DictionaryType::ConstIterator itr = fromDict.Begin();
@@ -34,7 +34,7 @@ void CopyDictionary(itk::MetaDataDictionary & fromDict, itk::MetaDataDictionary 
   while (itr != end) {
     itk::MetaDataObjectBase::Pointer entry = itr->second;
 
-    MetaDataStringType::Pointer entryvalue = dynamic_cast<MetaDataStringType *>(entry.GetPointer());
+    MetaDataStringType::Pointer entryvalue = dynamic_cast<MetaDataStringType*>(entry.GetPointer());
     if (entryvalue) {
       std::string tagkey = itr->first;
       std::string tagvalue = entryvalue->GetMetaDataObjectValue();
@@ -85,6 +85,11 @@ int main(int argc, char* argv[]) {
 
   std::string input_path = command.GetValueAsString("indir");
   std::string output_path = command.GetValueAsString("outdir");
+  if (input_path == "" || output_path == "") {
+    fprintf(stderr, "Error: no input or output directory specified.\n");
+    return 1;
+  }
+
 
   using MaskImageType = itk::Image<unsigned short, 3>;
   using OutputImageType = itk::Image<unsigned short, 2>;
@@ -126,14 +131,14 @@ int main(int argc, char* argv[]) {
       if (convertSpecificSeries != "") {
         seriesIdentifier = convertSpecificSeries;
         seriesItr = seriesUID.end();
-      } else // otherwise convert everything
-      {
+      } else {
         seriesIdentifier = seriesItr->c_str();
         seriesItr++;
       }
-      std::cout << "Reading: ";
-      std::cout << seriesIdentifier << std::endl;
-
+      if (verbose) {
+        std::cout << "Reading: ";
+        std::cout << seriesIdentifier << std::endl;
+      }
       typedef std::vector<std::string> FileNamesContainer;
       FileNamesContainer fileNames; // for the label series
 
@@ -189,9 +194,27 @@ int main(int argc, char* argv[]) {
       MaskReaderType::DictionaryRawPointer inputDict = (*(reader->GetMetaDataDictionaryArray()))[0];
       MaskReaderType::DictionaryArrayType  outputArray;
 
+      std::string newSeriesInstanceUID("");
+      if (uidFixedFlag) {
+        std::string derivedSeriesInstanceUID(seriesIdentifier);
+        std::string endString = ".1";
+        if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".1")
+          endString = ".2";
+
+        // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
+        derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
+        newSeriesInstanceUID = derivedSeriesInstanceUID;
+      } else {
+        if (newSeriesInstanceUID == "") {
+          gdcm::UIDGenerator uid;
+          uid.SetRoot("1.3.6.1.4.1.45037");
+          newSeriesInstanceUID = std::string(uid.Generate());
+        } // keep reusing else
+      }
+
       gdcm::UIDGenerator suid;
       suid.SetRoot("1.3.6.1.4.1.45037");
-      std::string        seriesUID = suid.Generate();
+      // std::string        seriesUID = suid.Generate();
       //gdcm::UIDGenerator fuid;
       //fuid.SetRoot("1.3.6.1.4.1.45037");
       //std::string        frameOfReferenceUID = fuid.Generate();
@@ -217,11 +240,30 @@ int main(int argc, char* argv[]) {
 
         // Set the UID's for the study, series, SOP  and frame of reference
         itk::EncapsulateMetaData<std::string>(*dict, "0020|000d", studyUID);
-        itk::EncapsulateMetaData<std::string>(*dict, "0020|000e", seriesUID);
+        itk::EncapsulateMetaData<std::string>(*dict, "0020|000e", newSeriesInstanceUID);
+        std::string oldSOPInstanceUID("");
+        itk::ExposeMetaData<std::string>(*inputDict, "0008|0018", oldSOPInstanceUID);
 
-        std::string sopInstanceUID = suid.Generate();
-        itk::EncapsulateMetaData<std::string>(*dict, "0008|0018", sopInstanceUID);
-        itk::EncapsulateMetaData<std::string>(*dict, "0002|0003", sopInstanceUID);
+        std::string newSOPInstanceUID("");
+        if (uidFixedFlag) {
+          std::string derivedSOPInstanceUID(oldSOPInstanceUID);
+          std::string endString = ".4";
+          if (derivedSOPInstanceUID.substr(derivedSOPInstanceUID.size() - 2, 2) == ".4")
+            endString = ".5";
+
+          // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
+          derivedSOPInstanceUID = derivedSOPInstanceUID.substr(0, 64 - 3) + endString;
+          newSOPInstanceUID = derivedSOPInstanceUID;
+        } else {
+          gdcm::UIDGenerator uid;
+          uid.SetRoot("1.3.6.1.4.1.45037");
+          newSOPInstanceUID = std::string(uid.Generate());
+        }
+
+
+        // std::string sopInstanceUID = suid.Generate();
+        itk::EncapsulateMetaData<std::string>(*dict, "0008|0018", newSOPInstanceUID);
+        itk::EncapsulateMetaData<std::string>(*dict, "0002|0003", newSOPInstanceUID);
 
         std::string oldSeriesDesc;
         itk::ExposeMetaData<std::string>(*inputDict, "0008|103e", oldSeriesDesc);
@@ -239,6 +281,13 @@ int main(int argc, char* argv[]) {
         value << oldSeriesNumber << "1";
         itk::EncapsulateMetaData<std::string>(*dict, "0020|0011", value.str());
 
+        // add how the image was derived
+        value.str("");
+        value << "Mask volume generated by MorphologicalContourInterpolation " << versionString;
+        lengthDesc = value.str().length();
+        std::string derivationDesc(value.str(), 0, lengthDesc > 1024 ? 1024 : lengthDesc);
+        itk::EncapsulateMetaData<std::string>(*dict, "0008|2111", derivationDesc);
+
         // Save the dictionary
         outputArray.push_back(dict);
       }
@@ -251,7 +300,7 @@ int main(int argc, char* argv[]) {
       using OutputNamesGeneratorType = itk::NumericSeriesFileNames;
       auto        outputNames = OutputNamesGeneratorType::New();
       std::string seriesFormat(output_path);
-      seriesFormat = seriesFormat + "/" + "IM%d.dcm";
+      seriesFormat = seriesFormat + "/" + "IM%04d.dcm";
       outputNames->SetSeriesFormat(seriesFormat.c_str());
       const unsigned int firstSlice = start[2];
       const unsigned int lastSlice = start[2] + inputSize[2] - 1;
@@ -267,7 +316,7 @@ int main(int argc, char* argv[]) {
       seriesWriter->SetMetaDataDictionaryArray(&outputArray);
       try {
         seriesWriter->Update();
-      } catch (const itk::ExceptionObject & excp) {
+      } catch (const itk::ExceptionObject& excp) {
         std::cerr << "Exception thrown while writing the series " << std::endl;
         std::cerr << excp << std::endl;
         return EXIT_FAILURE;
