@@ -65,6 +65,11 @@ int main(int argc, char* argv[]) {
     "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
 
+  command.SetOption("MaxNumberOfThreads", "t", 4, "Use at most X (4) threads for computation.");
+  command.SetOptionLongTag("MaxNumberOfThreads", "maxnumberofthreads");
+  command.AddOptionField("MaxNumberOfThreads", "maxnumberofthreads", MetaCommand::INT, 4);
+
+
   // convert a specific series
   std::string convertSpecificSeries = "";
 
@@ -74,6 +79,15 @@ int main(int argc, char* argv[]) {
   if (!command.Parse(argc, argv)) {
     return 1;
   }
+
+  // be nice
+  int maxThreads = 4;
+  if (command.GetOptionWasSet("MaxNumberOfThreads")) {
+    maxThreads = command.GetValueAsInt("MaxNumberOfThreads");
+    if (maxThreads < 1)
+      maxThreads = 1;
+  } 
+  itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(maxThreads);
 
   bool uidFixedFlag = false;
   if (command.GetOptionWasSet("UIDFixed"))
