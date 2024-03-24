@@ -4,6 +4,9 @@
 #include <itkMedianImageFilter.h>
 #include <itkMorphologicalContourInterpolator.h>
 
+#include "itkExtractImageFilter.h"
+#include "itkPasteImageFilter.h"
+
 #include "itkGDCMImageIO.h"
 #include "itkGDCMSeriesFileNames.h"
 #include "itkImageSeriesReader.h"
@@ -13,7 +16,7 @@
 #include "itkNumericSeriesFileNames.h"
 
 
-
+#include "mytypes.h"
 #include "metaCommand.h"
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
@@ -178,9 +181,73 @@ int main(int argc, char* argv[]) {
       // and put the result back into the input image before saving it.
       //   see: https://itk.org/Doxygen/html/Examples_2IO_2ImageReadExtractFilterInsertWrite_8cxx-example.html#_a4
 
+      //
+      // start by computing the minimal bounding box around our regions of interest
+      //
+      std::vector<int> boundingBox{0,0,0,0,0,0};
+      bool boundingBoxValid = false;
+      using IteratorTypeImage = itk::ImageRegionIteratorWithIndex< MaskImageType >;
+      const MaskImageType::RegionType& inputRegion = reader->GetOutput()->GetLargestPossibleRegion();
+      itk::ImageRegionIteratorWithIndex<MaskImageType> iter(reader->GetOutput(), inputRegion);
+      iter.GoToBegin();
+      while( !iter.IsAtEnd() ) {
+        MaskImageType::PixelType value = iter.Value();
+        if (value > 0) {
+          MaskImageType::IndexType idx = iter.GetIndex();
+          if (!boundingBoxValid) {
+            // first time init
+            boundingBox[0] = idx[0];
+            boundingBox[1] = idx[1];
+            boundingBox[2] = idx[2];
+            boundingBox[3] = boundingBox[0];
+            boundingBox[4] = boundingBox[1];
+            boundingBox[5] = boundingBox[2];
+            boundingBoxValid = true;
+          }
+          if (idx[0] < boundingBox[0])
+            boundingBox[0] = idx[0];
+          if (idx[1] < boundingBox[1])
+            boundingBox[1] = idx[1];
+          if (idx[2] < boundingBox[2])
+            boundingBox[2] = idx[2];
+          if (idx[0] > boundingBox[3])
+            boundingBox[3] = idx[0];
+          if (idx[1] > boundingBox[4])
+            boundingBox[4] = idx[1];
+          if (idx[2] > boundingBox[5])
+            boundingBox[5] = idx[2];
+        }
+        ++iter;
+      }
+      if (verbose) {
+        fprintf(stdout, "found minimum enclosing bounding box: %d,%d,%d..%d,%d,%d\n", boundingBox[0], boundingBox[1], boundingBox[2], boundingBox[3], boundingBox[4], boundingBox[5]);
+      }
+      MaskImageType::SizeType roi_size = inputRegion.GetSize();
+      roi_size[0] = boundingBox[3]-boundingBox[0]; // TODO: do we have to add 1 or 2 here?
+      roi_size[1] = boundingBox[4]-boundingBox[1];
+      roi_size[2] = boundingBox[5]-boundingBox[2];
+      MaskImageType::IndexType roi_start = inputRegion.GetIndex();
+      roi_start[0] = boundingBox[0];
+      roi_start[1] = boundingBox[1];
+      roi_start[2] = boundingBox[2];
+
+      // next step is to copy this region into another (smaller) volume
+      // Hope is that in a smaller volume all following computations are faster.
+      using ExtractFilterType = itk::ExtractImageFilter<MaskImageType, MaskImageType>;
+      auto extractFilter = ExtractFilterType::New();
+      //extractFilter->SetDirectionCollapseToSubmatrix();
+      const MaskImageType *     inputImage = reader->GetOutput();
+
+      MaskImageType::RegionType desiredRegion;
+      desiredRegion.SetSize(roi_size);
+      desiredRegion.SetIndex(roi_start);
+      extractFilter->SetInput(inputImage);
+      extractFilter->SetExtractionRegion(desiredRegion);
+
+
       using mciType = itk::MorphologicalContourInterpolator<MaskImageType>;
       mciType::Pointer mci = mciType::New();
-      mci->SetInput(reader->GetOutput());
+      mci->SetInput(extractFilter->GetOutput() /*reader->GetOutput() */);
       bool UseDistanceTransform = true;
       bool ball = true;
       int axis = -1; // all axis
@@ -200,6 +267,15 @@ int main(int argc, char* argv[]) {
       medF->SetRadius(smoothingRadius);
       medF->Update();
 
+
+      using PasteFilterType = itk::PasteImageFilter<MaskImageType, MaskImageType>;
+      auto pasteFilter = PasteFilterType::New();
+      pasteFilter->SetSourceImage(medF->GetOutput());
+      pasteFilter->SetDestinationImage(inputImage);
+      pasteFilter->SetDestinationIndex(roi_start);
+      const MaskImageType * medianImage = medF->GetOutput();
+      pasteFilter->SetSourceRegion(medianImage->GetBufferedRegion());
+
       // Instead of writing a single file, we want to write out a new DICOM series
       // but keep all the input DICOM tags in place. Or at least make them compatible
       // with '-u'.
@@ -209,7 +285,7 @@ int main(int argc, char* argv[]) {
         using WriterType = itk::ImageFileWriter<MaskImageType>;
         WriterType::Pointer writer = WriterType::New();
         writer->SetFileName(p_out.c_str());
-        writer->SetInput(medF->GetOutput());
+        writer->SetInput(pasteFilter->GetOutput() /*medF->GetOutput()*/);
         writer->SetUseCompression(true);
         writer->Update();
       }
@@ -244,9 +320,9 @@ int main(int argc, char* argv[]) {
       //fuid.SetRoot("1.3.6.1.4.1.45037");
       //std::string        frameOfReferenceUID = fuid.Generate();
 
-      const MaskImageType::RegionType& inputRegion = reader->GetOutput()->GetLargestPossibleRegion();
-      const MaskImageType::IndexType    start = inputRegion.GetIndex();
-      const MaskImageType::SizeType& inputSize = inputRegion.GetSize();
+      const MaskImageType::RegionType& inputRegion2 = reader->GetOutput()->GetLargestPossibleRegion();
+      const MaskImageType::IndexType    start = inputRegion2.GetIndex();
+      const MaskImageType::SizeType& inputSize = inputRegion2.GetSize();
 
       std::string studyUID;
       //std::string sopClassUID;
@@ -334,7 +410,7 @@ int main(int argc, char* argv[]) {
       outputNames->SetIncrementIndex(1);
 
       auto seriesWriter = SeriesWriterType::New();
-      seriesWriter->SetInput(medF->GetOutput());
+      seriesWriter->SetInput(pasteFilter->GetOutput() /*medF->GetOutput()*/);
 
       seriesWriter->SetImageIO(dicomIO);
       seriesWriter->SetFileNames(outputNames->GetFileNames());
