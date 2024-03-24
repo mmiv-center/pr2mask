@@ -65,9 +65,9 @@ int main(int argc, char* argv[]) {
     "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
 
-  command.SetOption("MaxNumberOfThreads", "t", 4, "Use at most X (4) threads for computation.");
+  command.SetOption("MaxNumberOfThreads", "t", false, "Use at most X (4) threads for computation.");
   command.SetOptionLongTag("MaxNumberOfThreads", "maxnumberofthreads");
-  command.AddOptionField("MaxNumberOfThreads", "maxnumberofthreads", MetaCommand::INT, 4);
+  command.AddOptionField("MaxNumberOfThreads", "maxnumberofthreads", MetaCommand::INT, false);
 
 
   // convert a specific series
@@ -167,6 +167,17 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
       }
 
+      // create an output folder based on the seriesIdentifier
+      boost::filesystem::path p_out = output_path + boost::filesystem::path::preferred_separator + seriesIdentifier;
+      if (!itksys::SystemTools::FileIsDirectory(p_out.c_str())) {
+        // create the output directory
+        create_directories(p_out);
+      } 
+
+      // In order to speed up this processing we should extract the sub-region of the label, process on the sub-volume
+      // and put the result back into the input image before saving it.
+      //   see: https://itk.org/Doxygen/html/Examples_2IO_2ImageReadExtractFilterInsertWrite_8cxx-example.html#_a4
+
       using mciType = itk::MorphologicalContourInterpolator<MaskImageType>;
       mciType::Pointer mci = mciType::New();
       mci->SetInput(reader->GetOutput());
@@ -197,7 +208,7 @@ int main(int argc, char* argv[]) {
         // if we would want to save a single file output
         using WriterType = itk::ImageFileWriter<MaskImageType>;
         WriterType::Pointer writer = WriterType::New();
-        writer->SetFileName(output_path);
+        writer->SetFileName(p_out.c_str());
         writer->SetInput(medF->GetOutput());
         writer->SetUseCompression(true);
         writer->Update();
@@ -313,7 +324,7 @@ int main(int argc, char* argv[]) {
       using SeriesWriterType = itk::ImageSeriesWriter<MaskImageType, OutputImageType>;
       using OutputNamesGeneratorType = itk::NumericSeriesFileNames;
       auto        outputNames = OutputNamesGeneratorType::New();
-      std::string seriesFormat(output_path);
+      std::string seriesFormat(p_out.c_str());
       seriesFormat = seriesFormat + "/" + "IM%04d.dcm";
       outputNames->SetSeriesFormat(seriesFormat.c_str());
       const unsigned int firstSlice = start[2];
