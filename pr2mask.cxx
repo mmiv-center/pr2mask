@@ -216,7 +216,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
     }
   }
   if (verbose) {
-    fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
+    fprintf(stdout, "CumSum threshold [%.2f, %.2f]\n", t1, t2);
   }
 
   std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
@@ -1766,7 +1766,7 @@ int main(int argc, char *argv[]) {
         std::string newFusedSeriesInstanceUID("");
 
         // keep the SeriesDescription around so we can use it later
-        std::string seriesDescription;
+        std::string SeriesDescription;
 
         // remember the last SOPInstanceUID from the list of images
         std::string SOPInstanceUID;
@@ -1824,6 +1824,7 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0008|0018", SOPInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
+          itk::ExposeMetaData<std::string>(dictionary, "0008|103e", SeriesDescription);
 
           // make a copy of this image series in the output/images/ folder
           if (1) {
@@ -2056,9 +2057,9 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newSeriesInstanceUID);
 
           // set the series description (max 64 characters)
-          if (seriesDescription != "")
-            seriesDescription += " ";
-          std::string newSeriesDescription = seriesDescription + "(mask)";
+          if (SeriesDescription != "")
+            SeriesDescription += " ";
+          std::string newSeriesDescription = SeriesDescription + "(mask)";
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|103e", newSeriesDescription.substr(0, 64));
           // set window center and window width
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1050", std::to_string(0.5));
@@ -2116,7 +2117,7 @@ int main(int argc, char *argv[]) {
         report->StudyTime = StudyTime;
         report->AccessionNumber = AccessionNumber;
         report->StudyID = StudyID;
-        report->SeriesDescription = seriesDescription + " (report)";
+        report->SeriesDescription = SeriesDescription + " (report)";
         report->ReferringPhysician = ReferringPhysician;
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
@@ -2136,7 +2137,10 @@ int main(int argc, char *argv[]) {
         }
 
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
+        if (verbose)
+          fprintf(stdout, "compute biomarkers...\n");
         computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
+        
         int key_fact = 0;
         for (int i = 0; i < report->measures.size(); i++) {
           key_fact += std::stof(report->measures[i].find("physical_size")->second);
