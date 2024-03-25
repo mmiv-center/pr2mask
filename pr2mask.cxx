@@ -1620,6 +1620,12 @@ int main(int argc, char *argv[]) {
   // the image data
   std::vector<Polygon> storage;
   std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
+  // TODO: check if input points to a real location
+  if (!itksys::SystemTools::FileIsDirectory(input.c_str())) {
+    fprintf(stderr, "Error: could not find input directory: \"%s\"\n", input.c_str());
+    exit(-1);
+  }
+
   parseForPolygons(input, &storage, &SOPInstanceUID2SeriesInstanceUID, verbose);
   if (storage.size() == 0) {
     fprintf(stderr, "\033[0;31mError\033[0m: No presentation state [PS] files found that contain polylines.\n");
