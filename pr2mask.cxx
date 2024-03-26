@@ -1584,9 +1584,16 @@ int main(int argc, char *argv[]) {
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
+  command.SetOption("NoBiomarker", "nb", false, "Do not create biomarker to speed up mask processing");
+  command.SetOptionLongTag("NoBiomarker", "nobiomarker");
+
   if (!command.Parse(argc, argv)) {
     return 1;
   }
+
+  bool biomarker = true;
+  if (command.GetOptionWasSet("NoBiomarker"))
+    biomarker = false;
 
   bool uidFixedFlag = false;
   if (command.GetOptionWasSet("UIDFixed"))
@@ -2143,9 +2150,10 @@ int main(int argc, char *argv[]) {
         }
 
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
-        if (verbose)
+        if (verbose && biomarker)
           fprintf(stdout, "compute biomarkers...\n");
-        computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
+        if (biomarker)
+          computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
         
         int key_fact = 0;
         for (int i = 0; i < report->measures.size(); i++) {
