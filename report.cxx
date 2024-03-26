@@ -912,7 +912,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
       int ymax = HEIGHT;
       // current roi's size is (overwrite the overall size in this loop)
       std::stringstream stream;
-      if (report->measures[roi].find("physical_size") != report->measures[roi].end()) {
+      if (report->measures.size() > roi && report->measures[roi].find("physical_size") != report->measures[roi].end()) {
         stream << std::fixed << std::setprecision(2) << (atof(report->measures[roi].find("physical_size")->second.c_str())/1000.0);
       } else {
         stream << "unknown ";
