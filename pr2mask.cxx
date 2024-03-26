@@ -1584,7 +1584,7 @@ int main(int argc, char *argv[]) {
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
-  command.SetOption("NoBiomarker", "n", false, "Do not create biomarker to speed up mask processing");
+  command.SetOption("NoBiomarker", "b", false, "Do not create biomarker to speed up mask processing");
   command.SetOptionLongTag("NoBiomarker", "nobiomarker");
 
   if (!command.Parse(argc, argv)) {
