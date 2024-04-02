@@ -222,6 +222,26 @@ int main(int argc, char* argv[]) {
       if (verbose) {
         fprintf(stdout, "found minimum enclosing bounding box: %d,%d,%d..%d,%d,%d\n", boundingBox[0], boundingBox[1], boundingBox[2], boundingBox[3], boundingBox[4], boundingBox[5]);
       }
+      // extend the bounding box
+      boundingBox[0] -= 1;
+      if (boundingBox[0] < 0)
+        boundingBox[0] = 0;
+      boundingBox[1] -= 1;
+      if (boundingBox[1] < 0)
+        boundingBox[1] = 0;
+      boundingBox[2] -= 1;
+      if (boundingBox[2] < 0)
+        boundingBox[2] = 0;
+      boundingBox[3] += 1;
+      if (boundingBox[3] >= inputRegion.GetSize()[0])
+        boundingBox[3] = inputRegion.GetSize()[0];
+      boundingBox[4] += 1;
+      if (boundingBox[4] >= inputRegion.GetSize()[1])
+        boundingBox[4] = inputRegion.GetSize()[1];
+      boundingBox[5] += 1;
+      if (boundingBox[5] >= inputRegion.GetSize()[2])
+        boundingBox[5] = inputRegion.GetSize()[2];
+
       MaskImageType::SizeType roi_size = inputRegion.GetSize();
       roi_size[0] = boundingBox[3]-boundingBox[0]; // TODO: do we have to add 1 or 2 here?
       roi_size[1] = boundingBox[4]-boundingBox[1];
