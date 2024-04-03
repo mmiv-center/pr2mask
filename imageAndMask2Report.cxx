@@ -95,6 +95,487 @@ struct generateImageReturn
      std::vector< std::string > text;
 };
 
+// generate a key image based on an input image mask and the ground truth image
+// This key image generator shall generate a mosaic of images, one for each lesion.
+generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution) {
+  if (verbose) {
+    fprintf(stdout, "Start generating a key image...\n");
+  }
+  std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
+
+  generateImageReturn returns; // store keyImage and the location and text that should be presented ontop of the image
+
+  // based on the number of labels we will create an image mosaic (MPR for each region of interest)
+  int numObjects = labelMap->GetNumberOfLabelObjects();
+  if (numObjects < 1) {
+    fprintf(stderr, "Error: no object found, refuse to create a key image\n");
+    return(returns);
+  }
+
+  // lets use the base image resolution of
+  int base_image_sizeLW = 512; // we will put an axial square image next to coronal and sagittal on top of each other
+  int base_image_sizeLH = base_image_sizeLW;
+  int base_image_sizeRW = floor(base_image_sizeLW / 1.618);
+  int base_image_sizeRH = floor(base_image_sizeLH / 2.0);
+
+  // the total size of the image is now
+  resolution[0] = base_image_sizeLW + base_image_sizeRW;
+  resolution[1] = numObjects * base_image_sizeLH;
+
+  // create a new RGB image
+  CImageType::Pointer keyImage = CImageType::New();
+  returns.keyImage = keyImage;
+
+  using RegionType = itk::ImageRegion<2>;
+  RegionType::SizeType size;
+  size[0] = resolution[0]; // 512
+  size[1] = resolution[1]; // 512
+
+  RegionType::IndexType index;
+  index.Fill(0);
+
+  RegionType region(index, size);
+  keyImage->SetRegions(region);
+
+  keyImage->Allocate();
+  keyImage->FillBuffer(itk::NumericTraits<CPixelType>::Zero);
+
+  RegionType outputRegion = keyImage->GetLargestPossibleRegion();
+  //itk::ImageRegionIteratorWithIndex<CImageType> outputRGBIterator(keyImage, outputRegion);
+
+  // 
+  // Compute the independently blurred channels for the fused image and all colors in 3D
+  // 
+
+  //
+  // compute optimal window level for whole image, we will use the values for the curved slice
+  //
+  using ImageCalculatorFilterType = itk::MinimumMaximumImageCalculator<ImageType3D>;
+  ImageCalculatorFilterType::Pointer imageCalculatorFilter = ImageCalculatorFilterType::New();
+  imageCalculatorFilter->SetImage(image);
+  imageCalculatorFilter->Compute();
+  int minGray = imageCalculatorFilter->GetMinimum();
+  int maxGray = imageCalculatorFilter->GetMaximum();
+
+  using HistogramGeneratorType = itk::Statistics::ScalarImageToHistogramGenerator<ImageType3D>;
+  HistogramGeneratorType::Pointer histogramGenerator = HistogramGeneratorType::New();
+  histogramGenerator->SetInput(image);
+  int histogramSize = 1024;
+  histogramGenerator->SetNumberOfBins(histogramSize);
+  histogramGenerator->SetHistogramMin(minGray);
+  histogramGenerator->SetHistogramMax(maxGray);
+  histogramGenerator->Compute();
+  using HistogramType = HistogramGeneratorType::HistogramType;
+  const HistogramType *histogram = histogramGenerator->GetOutput();
+  double lowerT = 0.01;
+  double upperT = 0.999;
+  double t1 = -1;
+  double t2 = -1;
+  double sum = 0;
+  double total = 0;
+  for (unsigned int bin = 0; bin < histogramSize; bin++) {
+    total += histogram->GetFrequency(bin, 0);
+  }
+  for (unsigned int bin = 0; bin < histogramSize; bin++) {
+    double f = histogram->GetFrequency(bin, 0) / total;
+    // fprintf(stdout, "bin %d, value is %f\n", bin, f);
+    sum += f;
+    if (t1 == -1 && sum > lowerT) {
+      t1 = minGray + (maxGray - minGray) * (bin / (float)histogramSize);
+    }
+    if (t2 == -1 && sum > upperT) {
+      t2 = minGray + (maxGray - minGray) * (bin / (float)histogramSize);
+      break;
+    }
+  }
+  if (verbose) {
+    fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
+  }
+
+  // we need three 3D images for the red green and blue channel
+  // so we can blurr them before using them in the output image
+  typedef float FPixelType;
+  // typedef itk::Image<FPixelType, 2> FloatImageType;
+  using FloatImageType = itk::Image<FPixelType, 3>;
+  FloatImageType::Pointer red_channel = FloatImageType::New();
+  FloatImageType::Pointer green_channel = FloatImageType::New();
+  FloatImageType::Pointer blue_channel = FloatImageType::New();
+  ImageType3D::RegionType fusedRegion = image->GetLargestPossibleRegion();
+  red_channel->SetRegions(fusedRegion);
+  red_channel->Allocate();
+  red_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  red_channel->SetOrigin(image->GetOrigin());
+  red_channel->SetSpacing(image->GetSpacing());
+  red_channel->SetDirection(image->GetDirection());
+  green_channel->SetRegions(fusedRegion);
+  green_channel->Allocate();
+  green_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  green_channel->SetOrigin(image->GetOrigin());
+  green_channel->SetSpacing(image->GetSpacing());
+  green_channel->SetDirection(image->GetDirection());
+  blue_channel->SetRegions(fusedRegion);
+  blue_channel->Allocate();
+  blue_channel->FillBuffer(itk::NumericTraits<FPixelType>::Zero);
+  blue_channel->SetOrigin(image->GetOrigin());
+  blue_channel->SetSpacing(image->GetSpacing());
+  blue_channel->SetDirection(image->GetDirection());
+
+  for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); n++) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+    int label = labelObject->GetLabel(); // it might be that all regions have the same label and only n is a good choice for the color
+
+    // color is
+    std::vector<float> col = labelColors2[ (label % (labelColors2.size()-1)) +1 ];
+    itk::Index<3U> index;
+    for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+      index = labelObject->GetIndex(pixelId);
+      // set this position in all three color images, values are between 0 and 1
+      red_channel->SetPixel(index, col[0]/255.0); 
+      green_channel->SetPixel(index, col[1]/255.0);
+      blue_channel->SetPixel(index, col[2]/255.0);
+    }
+  }
+
+  // smooth all three channels independently from each other
+  using GFilterType = itk::DiscreteGaussianImageFilter<FloatImageType, FloatImageType>;
+  auto gaussFilterR = GFilterType::New();
+  gaussFilterR->SetInput(red_channel);
+  gaussFilterR->SetVariance(1.5f);
+  gaussFilterR->Update();
+  FloatImageType::Pointer smoothRed = gaussFilterR->GetOutput();
+
+  auto gaussFilterG = GFilterType::New();
+  gaussFilterG->SetInput(green_channel);
+  gaussFilterG->SetVariance(1.5f);
+  gaussFilterG->Update();
+  FloatImageType::Pointer smoothGreen = gaussFilterG->GetOutput();
+
+  auto gaussFilterB = GFilterType::New();
+  gaussFilterB->SetInput(blue_channel);
+  gaussFilterB->SetVariance(1.5f);
+  gaussFilterB->Update();
+  FloatImageType::Pointer smoothBlue = gaussFilterB->GetOutput();
+
+  itk::ImageRegionIterator<FloatImageType> redSIterator(smoothRed, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> greenSIterator(smoothGreen, fusedRegion);
+  itk::ImageRegionIterator<FloatImageType> blueSIterator(smoothBlue, fusedRegion);
+
+  itk::LinearInterpolateImageFunction<ImageType3D, double>::Pointer interpolator =
+    itk::LinearInterpolateImageFunction<ImageType3D, double>::New();
+  interpolator->SetInputImage(image);
+
+  itk::LinearInterpolateImageFunction<FloatImageType, double>::Pointer interpolatorRed =
+    itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
+  interpolatorRed->SetInputImage(smoothRed);
+
+  itk::LinearInterpolateImageFunction<FloatImageType, double>::Pointer interpolatorGreen =
+    itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
+  interpolatorGreen->SetInputImage(smoothGreen);
+
+  itk::LinearInterpolateImageFunction<FloatImageType, double>::Pointer interpolatorBlue =
+    itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
+  interpolatorBlue->SetInputImage(smoothBlue);
+
+  float f = 0.7;
+
+  for (unsigned int roi = 0; roi < labelMap->GetNumberOfLabelObjects(); ++roi) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(roi); // the label number is the connected component number - not the one label as mask
+    int label = labelObject->GetLabel();
+
+    // do this for the left side
+    int targetLocationStart[2];
+    targetLocationStart[0] = 0;
+    targetLocationStart[1] = roi * base_image_sizeLH;
+    int targetLocationEnd[2];
+    targetLocationEnd[0] = targetLocationStart[0] + base_image_sizeLW;
+    targetLocationEnd[1] = targetLocationStart[1] + base_image_sizeLH;
+
+    RegionType::SizeType targetSize;
+    targetSize[0] = targetLocationEnd[0] - targetLocationStart[0];
+    targetSize[1] = targetLocationEnd[1] - targetLocationStart[1];
+    RegionType::IndexType targetIndex;
+    targetIndex[0] = targetLocationStart[0];
+    targetIndex[1] = targetLocationStart[1];
+
+    // compute the bounding box for this object in all three orientations
+    std::vector<double> boundingBox(6); // three coordinates and one label value (in physical coordinates)
+    using PT = typename ImageType3D::PointType;
+    PT floatIndexA; // a single point's coordinate (in world coordinates)
+    itk::Index<3U> index;
+    for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+      index = labelObject->GetIndex(pixelId);
+
+      // get the position in floating point from the index
+      image->TransformIndexToPhysicalPoint(index, floatIndexA);
+      if (pixelId == 0) {
+        boundingBox[0] = floatIndexA[0];
+        boundingBox[1] = floatIndexA[1];
+        boundingBox[2] = floatIndexA[2];
+        boundingBox[3] = floatIndexA[0];
+        boundingBox[4] = floatIndexA[1];
+        boundingBox[5] = floatIndexA[2];
+      }
+      if (boundingBox[0] > floatIndexA[0])
+        boundingBox[0] = floatIndexA[0];
+      if (boundingBox[1] > floatIndexA[1])
+        boundingBox[1] = floatIndexA[1];
+      if (boundingBox[2] > floatIndexA[2])
+        boundingBox[2] = floatIndexA[2];
+      if (boundingBox[3] < floatIndexA[0])
+        boundingBox[3] = floatIndexA[0];
+      if (boundingBox[4] < floatIndexA[1])
+        boundingBox[4] = floatIndexA[1];
+      if (boundingBox[5] < floatIndexA[2])
+        boundingBox[5] = floatIndexA[2];
+    }
+    // now make the bounding box bigger
+    std::vector<double> biggerBB(6);
+    biggerBB[0] = boundingBox[0] - (boundingBox[3]-boundingBox[0]);
+    biggerBB[1] = boundingBox[1] - (boundingBox[4]-boundingBox[1]);
+    biggerBB[2] = boundingBox[2] - (boundingBox[5]-boundingBox[2]);
+    biggerBB[3] = boundingBox[3] + (boundingBox[3]-boundingBox[0]);
+    biggerBB[4] = boundingBox[4] + (boundingBox[4]-boundingBox[1]);
+    biggerBB[5] = boundingBox[5] + (boundingBox[5]-boundingBox[2]);
+
+    for (int counter = 0; counter < 6; counter++)
+      boundingBox[counter] = biggerBB[counter];
+
+    // by definition our label is in the center of the picture
+    returns.pos.push_back(std::array<int, 2>{(int)floor(targetLocationStart[0] + (targetLocationEnd[0]-targetLocationStart[0])/2.0), (int)floor(targetLocationStart[1] + (targetLocationEnd[1]-targetLocationStart[1])/2.0)});
+    returns.text.push_back(std::to_string(label));
+
+    // do the next steps 3 times, start with left image
+    {
+      RegionType targetRegion(targetIndex, targetSize); // the region we want to fill in the output key image
+      itk::ImageRegionIteratorWithIndex<CImageType> targetRGBIterator(keyImage, targetRegion);
+
+      // finished computing the maximum inclosing bounding box for this region of interest
+      // do we need that? We could zoom in, but that is costly... with a zoom factor. 
+      // We would want to see the region of interest and double the space around the region.
+      targetRGBIterator.GoToBegin(); // 2D Volume of curved slice
+      while (!targetRGBIterator.IsAtEnd() ) {
+        CPixelType value = targetRGBIterator.Value(); // we ignore this value, will be filled in with correct one at the end
+        CImageType::IndexType idx = targetRGBIterator.GetIndex();
+        // the current output pixel (idx) in percentage of output image (index coordinates)
+        float idx_percent[2];
+        idx_percent[0] = ((float)idx[0] - (float)targetLocationStart[0])/((float)targetLocationEnd[0]-(float)targetLocationStart[0]);
+        idx_percent[1] = ((float)idx[1] - (float)targetLocationStart[1])/((float)targetLocationEnd[1]-(float)targetLocationStart[1]);
+        // the above should be between 0.0 and 1.0, test here
+        if (idx_percent[0] < 0.0 || idx_percent[0]>1.0) {
+          fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[0]);
+        }
+        if (idx_percent[1] < 0.0 || idx_percent[1]>1.0) {
+          fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[1]);
+        }
+
+        itk::ContinuousIndex<double, 3> pixel;
+        itk::ContinuousIndex<double, 3> floatIndexA;
+        // use x as fastest running index and y as second fast running, third dimension is at mid-point
+        pixel[0] = (float)boundingBox[0] + idx_percent[0]*(boundingBox[3]-boundingBox[0]); // in pixel coordinates of image, based on boundingBox of one dimension
+        pixel[1] = (float)boundingBox[1] + idx_percent[1]*(boundingBox[4]-boundingBox[1]);
+        pixel[2] = (float)boundingBox[2] + (boundingBox[5]-boundingBox[2])/2.0f; // middle
+
+        image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
+
+        // std::cout << "Value at 1.3: " << interpolator->EvaluateAtContinuousIndex(pixel) << std::endl;
+        float grayValue = 0;
+        float redValue = 0;
+        float blueValue = 0;
+        float greenValue = 0;
+        if (interpolator->IsInsideBuffer(floatIndexA)) {
+          grayValue = interpolator->EvaluateAtContinuousIndex(floatIndexA);
+          redValue = interpolatorRed->EvaluateAtContinuousIndex(floatIndexA);
+          greenValue = interpolatorGreen->EvaluateAtContinuousIndex(floatIndexA);
+          blueValue = interpolatorBlue->EvaluateAtContinuousIndex(floatIndexA);
+        } else {
+          //fprintf(stdout, "OUTSIDE region element at location %f %f %f\n", pixel[0], pixel[1], pixel[2]);
+          //fflush(stdout);
+        }
+
+        float scaledGrayValue = (grayValue - t1) / (t2-t1);
+
+        float red = f * scaledGrayValue + (1 - f) * redValue;
+        float green = f * scaledGrayValue + (1 - f) * greenValue;
+        float blue = f * scaledGrayValue + (1 - f) * blueValue;
+        //fprintf(stdout, "before clipping red, green blue: %f %f %f\n", red, green, blue);
+        red = std::min<float>(1, std::max<float>(0,red));
+        green = std::min<float>(1, std::max<float>(0,green));
+        blue = std::min<float>(1, std::max<float>(0,blue));
+        //fprintf(stdout, "red, green blue: %f %f %f\n", red, green, blue);
+        //fflush(stdout);
+        value.SetRed((int)(red * 255));
+        value.SetGreen((int)(green * 255));
+        value.SetBlue((int)(blue * 255));
+        targetRGBIterator.Set(value);
+
+        ++targetRGBIterator;
+      }
+    } // Left image done
+    { // Right top image
+
+      targetLocationStart[0] = base_image_sizeLW;
+      targetLocationStart[1] = roi * base_image_sizeLH;
+      targetLocationEnd[0] = targetLocationStart[0] + base_image_sizeRW;
+      targetLocationEnd[1] = targetLocationStart[1] + base_image_sizeRH;
+
+      RegionType::SizeType targetSize;
+      targetSize[0] = targetLocationEnd[0] - targetLocationStart[0];
+      targetSize[1] = targetLocationEnd[1] - targetLocationStart[1];
+      RegionType::IndexType targetIndex;
+      targetIndex[0] = targetLocationStart[0];
+      targetIndex[1] = targetLocationStart[1];
+
+      RegionType targetRegion(targetIndex, targetSize); // the region we want to fill in the output key image
+      itk::ImageRegionIteratorWithIndex<CImageType> targetRGBIterator(keyImage, targetRegion);
+
+      // finished computing the maximum inclosing bounding box for this region of interest
+      // do we need that? We could zoom in, but that is costly... with a zoom factor. 
+      // We would want to see the region of interest and double the space around the region.
+      targetRGBIterator.GoToBegin(); // 2D Volume of curved slice
+      while (!targetRGBIterator.IsAtEnd() ) {
+        CPixelType value = targetRGBIterator.Value(); // we ignore this value, will be filled in with correct one at the end
+        CImageType::IndexType idx = targetRGBIterator.GetIndex();
+        // the current output pixel (idx) in percentage of output image (index coordinates)
+        float idx_percent[2];
+        idx_percent[0] = ((float)idx[0] - (float)targetLocationStart[0])/((float)targetLocationEnd[0]-(float)targetLocationStart[0]);
+        idx_percent[1] = ((float)idx[1] - (float)targetLocationStart[1])/((float)targetLocationEnd[1]-(float)targetLocationStart[1]);
+        // the above should be between 0.0 and 1.0, test here
+        if (idx_percent[0] < 0.0 || idx_percent[0]>1.0) {
+          fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[0]);
+        }
+        if (idx_percent[1] < 0.0 || idx_percent[1]>1.0) {
+          fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[1]);
+        }
+
+        itk::ContinuousIndex<double, 3> pixel;
+        itk::ContinuousIndex<double, 3> floatIndexA;
+        // use x as fastest running index and y as second fast running, third dimension is at mid-point
+        pixel[0] = (float)boundingBox[0] + idx_percent[0]*(boundingBox[3]-boundingBox[0]); // in pixel coordinates of image, based on boundingBox of one dimension
+        pixel[1] = (float)boundingBox[1] + (boundingBox[4]-boundingBox[1])/2.0f; // middle
+        pixel[2] = (float)boundingBox[2] + idx_percent[1]*(boundingBox[5]-boundingBox[2]);
+
+        image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
+
+        // std::cout << "Value at 1.3: " << interpolator->EvaluateAtContinuousIndex(pixel) << std::endl;
+        float grayValue = 0;
+        float redValue = 0;
+        float blueValue = 0;
+        float greenValue = 0;
+        if (interpolator->IsInsideBuffer(floatIndexA)) {
+          grayValue = interpolator->EvaluateAtContinuousIndex(floatIndexA);
+          redValue = interpolatorRed->EvaluateAtContinuousIndex(floatIndexA);
+          greenValue = interpolatorGreen->EvaluateAtContinuousIndex(floatIndexA);
+          blueValue = interpolatorBlue->EvaluateAtContinuousIndex(floatIndexA);
+        } else {
+          //fprintf(stdout, "OUTSIDE region element at location %f %f %f\n", pixel[0], pixel[1], pixel[2]);
+          //fflush(stdout);
+        }
+
+        float scaledGrayValue = (grayValue - t1) / (t2-t1);
+
+        float red = f * scaledGrayValue + (1 - f) * redValue;
+        float green = f * scaledGrayValue + (1 - f) * greenValue;
+        float blue = f * scaledGrayValue + (1 - f) * blueValue;
+        //fprintf(stdout, "before clipping red, green blue: %f %f %f\n", red, green, blue);
+        red = std::min<float>(1, std::max<float>(0,red));
+        green = std::min<float>(1, std::max<float>(0,green));
+        blue = std::min<float>(1, std::max<float>(0,blue));
+        //fprintf(stdout, "red, green blue: %f %f %f\n", red, green, blue);
+        //fflush(stdout);
+        value.SetRed((int)(red * 255));
+        value.SetGreen((int)(green * 255));
+        value.SetBlue((int)(blue * 255));
+        targetRGBIterator.Set(value);
+
+        ++targetRGBIterator;
+      }
+    } // Right top image done
+    { // Right bottom image
+
+      targetLocationStart[0] = base_image_sizeLW;
+      targetLocationStart[1] = roi * base_image_sizeLH + base_image_sizeRH;
+      targetLocationEnd[0] = targetLocationStart[0] + base_image_sizeRW;
+      targetLocationEnd[1] = targetLocationStart[1] + base_image_sizeRH;
+
+      RegionType::SizeType targetSize;
+      targetSize[0] = targetLocationEnd[0] - targetLocationStart[0];
+      targetSize[1] = targetLocationEnd[1] - targetLocationStart[1];
+      RegionType::IndexType targetIndex;
+      targetIndex[0] = targetLocationStart[0];
+      targetIndex[1] = targetLocationStart[1];
+
+      RegionType targetRegion(targetIndex, targetSize); // the region we want to fill in the output key image
+      itk::ImageRegionIteratorWithIndex<CImageType> targetRGBIterator(keyImage, targetRegion);
+
+      // finished computing the maximum inclosing bounding box for this region of interest
+      // do we need that? We could zoom in, but that is costly... with a zoom factor. 
+      // We would want to see the region of interest and double the space around the region.
+      targetRGBIterator.GoToBegin(); // 2D Volume of curved slice
+      while (!targetRGBIterator.IsAtEnd() ) {
+        CPixelType value = targetRGBIterator.Value(); // we ignore this value, will be filled in with correct one at the end
+        CImageType::IndexType idx = targetRGBIterator.GetIndex();
+        // the current output pixel (idx) in percentage of output image (index coordinates)
+        float idx_percent[2];
+        idx_percent[0] = ((float)idx[0] - (float)targetLocationStart[0])/((float)targetLocationEnd[0]-(float)targetLocationStart[0]);
+        idx_percent[1] = ((float)idx[1] - (float)targetLocationStart[1])/((float)targetLocationEnd[1]-(float)targetLocationStart[1]);
+        // the above should be between 0.0 and 1.0, test here
+        if (idx_percent[0] < 0.0 || idx_percent[0]>1.0) {
+          fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[0]);
+        }
+        if (idx_percent[1] < 0.0 || idx_percent[1]>1.0) {
+          fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[1]);
+        }
+
+        itk::ContinuousIndex<double, 3> pixel;
+        itk::ContinuousIndex<double, 3> floatIndexA;
+        // use x as fastest running index and y as second fast running, third dimension is at mid-point
+        pixel[0] = (float)boundingBox[0] + (boundingBox[3]-boundingBox[0])/2.0f; // middle
+        pixel[1] = (float)boundingBox[1] + idx_percent[0]*(boundingBox[4]-boundingBox[1]); // in pixel coordinates of image, based on boundingBox of one dimension
+        pixel[2] = (float)boundingBox[2] + idx_percent[1]*(boundingBox[5]-boundingBox[2]);
+
+        image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
+
+        // std::cout << "Value at 1.3: " << interpolator->EvaluateAtContinuousIndex(pixel) << std::endl;
+        float grayValue = 0;
+        float redValue = 0;
+        float blueValue = 0;
+        float greenValue = 0;
+        if (interpolator->IsInsideBuffer(floatIndexA)) {
+          grayValue = interpolator->EvaluateAtContinuousIndex(floatIndexA);
+          redValue = interpolatorRed->EvaluateAtContinuousIndex(floatIndexA);
+          greenValue = interpolatorGreen->EvaluateAtContinuousIndex(floatIndexA);
+          blueValue = interpolatorBlue->EvaluateAtContinuousIndex(floatIndexA);
+        } else {
+          //fprintf(stdout, "OUTSIDE region element at location %f %f %f\n", pixel[0], pixel[1], pixel[2]);
+          //fflush(stdout);
+        }
+
+        float scaledGrayValue = (grayValue - t1) / (t2-t1);
+
+        float red = f * scaledGrayValue + (1 - f) * redValue;
+        float green = f * scaledGrayValue + (1 - f) * greenValue;
+        float blue = f * scaledGrayValue + (1 - f) * blueValue;
+        //fprintf(stdout, "before clipping red, green blue: %f %f %f\n", red, green, blue);
+        red = std::min<float>(1, std::max<float>(0,red));
+        green = std::min<float>(1, std::max<float>(0,green));
+        blue = std::min<float>(1, std::max<float>(0,blue));
+        //fprintf(stdout, "red, green blue: %f %f %f\n", red, green, blue);
+        //fflush(stdout);
+        value.SetRed((int)(red * 255));
+        value.SetGreen((int)(green * 255));
+        value.SetBlue((int)(blue * 255));
+        targetRGBIterator.Set(value);
+
+        ++targetRGBIterator;
+      }
+    } // Right bottom image done
+
+  } 
+
+  return returns;
+}
+
+
 // generate a key image based on the input image and a mask (fused with names)
 // test: 
 //     ./imageAndMask2Report data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789/input data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789_output/labels/508bc8c54546f0c3383f4325ec6fa70e310328932af7bffcf812079391445.1/ /tmp/bla -u | less
@@ -1372,7 +1853,7 @@ std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, Im
   return results;
 }
 
-void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries) {
+void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries, bool isMosaic) {
   if (verbose) 
     fprintf(stdout, "start computing biomarkers...\n");
   typedef itk::GDCMSeriesFileNames NamesGeneratorType;
@@ -1479,7 +1960,12 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   }
 
   // compute a key image we can use in the report
-  generateImageReturn rets = generateKeyImage(image, labelMap, std::vector<int>{512,512});
+  generateImageReturn rets;
+  if (isMosaic) {
+    rets = generateKeyImageMosaic(image, labelMap, std::vector<int>{512,512});
+  } else {
+    rets = generateKeyImage(image, labelMap, std::vector<int>{512,512});
+  }
   report->keyImage = rets.keyImage;
   report->keyImagePositions = rets.pos;
   report->keyImageTexts = rets.text;
@@ -1834,9 +2320,16 @@ int main(int argc, char *argv[]) {
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
+  command.SetOption("ReportTypeMosaic", "r", false, "Select report type mosaic for independent label");
+  command.SetOptionLongTag("ReportTypeMosaic", "mosaic");
+
   if (!command.Parse(argc, argv)) {
     return 1;
   }
+
+  bool isMosaic = false;
+  if (command.GetOptionWasSet("ReportTypeMosaic"))
+    isMosaic = true;
 
   bool uidFixedFlag = false;
   if (command.GetOptionWasSet("UIDFixed"))
@@ -2460,7 +2953,7 @@ int main(int argc, char *argv[]) {
         }
         fflush(stdout);
         // we got the label as a mask stored in the labels folder, read, convert to label and create summary statistics
-        computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID);
+        computeBiomarkers(report, output, seriesIdentifier, newSeriesInstanceUID, isMosaic);
 
         int key_fact = 0;
         for (int i = 0; i < report->measures.size(); i++) {
