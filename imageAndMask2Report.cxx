@@ -97,7 +97,7 @@ struct generateImageReturn
 
 // generate a key image based on an input image mask and the ground truth image
 // This key image generator shall generate a mosaic of images, one for each lesion.
-generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution) {
+generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution, float lowerT, float upperT) {
   if (verbose) {
     fprintf(stdout, "Start generating a key image...\n");
   }
@@ -167,8 +167,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
   histogramGenerator->Compute();
   using HistogramType = HistogramGeneratorType::HistogramType;
   const HistogramType *histogram = histogramGenerator->GetOutput();
-  double lowerT = 0.01;
-  double upperT = 0.999;
+  // lowerT and upperT in percentages 0..1 are set in calling function
   double t1 = -1;
   double t2 = -1;
   double sum = 0;
@@ -579,7 +578,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
 // generate a key image based on the input image and a mask (fused with names)
 // test: 
 //     ./imageAndMask2Report data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789/input data/ror_trigger_run_Wednesday_980595789/ror_trigger_run_Wednesday_980595789_output/labels/508bc8c54546f0c3383f4325ec6fa70e310328932af7bffcf812079391445.1/ /tmp/bla -u | less
-generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution) {
+generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution, float lowerT, float upperT) {
   if (verbose) {
     fprintf(stdout, "Start generating a key image...\n");
   }
@@ -785,8 +784,9 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   histogramGenerator->Compute();
   using HistogramType = HistogramGeneratorType::HistogramType;
   const HistogramType *histogram = histogramGenerator->GetOutput();
-  double lowerT = 0.01;
-  double upperT = 0.999;
+  // set in calling function
+  //double lowerT = 0.01;
+  //double upperT = 0.999;
   double t1 = -1;
   double t2 = -1;
   double sum = 0;
@@ -1962,9 +1962,9 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   // compute a key image we can use in the report
   generateImageReturn rets;
   if (isMosaic) {
-    rets = generateKeyImageMosaic(image, labelMap, std::vector<int>{512,512});
+    rets = generateKeyImageMosaic(image, labelMap, std::vector<int>{512,512}, report->BrightnessContrastLL, report->BrightnessContrastUL);
   } else {
-    rets = generateKeyImage(image, labelMap, std::vector<int>{512,512});
+    rets = generateKeyImage(image, labelMap, std::vector<int>{512,512}, report->BrightnessContrastLL, report->BrightnessContrastUL);
   }
   report->keyImage = rets.keyImage;
   report->keyImagePositions = rets.pos;
@@ -2320,16 +2320,70 @@ int main(int argc, char *argv[]) {
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
-  command.SetOption("ReportTypeMosaic", "r", false, "Select report type mosaic for independent label");
-  command.SetOptionLongTag("ReportTypeMosaic", "mosaic");
+  command.SetOption("ReportType", "r", false, "Select report type for key image (mosaic|curvilinear)");
+  command.SetOptionLongTag("ReportType", "reporttype");
+  command.AddOptionField("ReportType", "value", MetaCommand::STRING, false);
+
+  command.SetOption("BrightnessContrastLL", "d", false, "Set threshold for brightness / contrast based on cummulative histogram lower limit (percentage dark pixel 0.01).");
+  command.SetOptionLongTag("BrightnessContrastLL", "brightness-contrast-ll");
+  command.AddOptionField("BrightnessContrastLL", "value", MetaCommand::FLOAT, false);
+
+  command.SetOption("BrightnessContrastUL", "b", false, "Set threshold for brightness / contrast based on cummulative histogram upper limit (percentage bright pixel 0.999).");
+  command.SetOptionLongTag("BrightnessContrastUL", "brightness-contrast-ul");
+  command.AddOptionField("BrightnessContrastUL", "value", MetaCommand::FLOAT, false);
+
 
   if (!command.Parse(argc, argv)) {
     return 1;
   }
 
+  verbose = false;
+  if (command.GetOptionWasSet("Verbose"))
+    verbose = true;
+
+
+  float brightness_contrast_ll = 0.01;
+  float brightness_contrast_ul = 0.999;
+  float brightnesscontrast_ll = brightness_contrast_ll;
+  float brightnesscontrast_ul = brightness_contrast_ul;
+  if (command.GetOptionWasSet("BrightnessContrastLL")) {
+    brightnesscontrast_ll = command.GetValueAsFloat("BrightnessContrastLL", "value");
+    if (brightnesscontrast_ll < 0 || brightnesscontrast_ll > 1.0) {
+      fprintf(stdout, "Warning: lower brightness values not between 0 and 1. Adjusted to 0.01.\n");
+      brightnesscontrast_ll = 0.01;
+    }
+  }
+  if (command.GetOptionWasSet("BrightnessContrastUL")) {
+    brightnesscontrast_ul = command.GetValueAsFloat("BrightnessContrastUL", "value");
+    if (brightnesscontrast_ul < 0 || brightnesscontrast_ul > 1.0) {
+      fprintf(stdout, "Warning: upper brightness values not between 0 and 1. Adjusted to 0.999.\n");
+      brightnesscontrast_ul = 0.999;
+    }
+  }
+  if (brightnesscontrast_ul < brightnesscontrast_ll) {
+    float tmp = brightnesscontrast_ll;
+    brightnesscontrast_ll = brightnesscontrast_ul;
+    brightnesscontrast_ul = tmp;
+  }
+  brightness_contrast_ll = brightnesscontrast_ll;
+  brightness_contrast_ul = brightnesscontrast_ul;
+  if (verbose) {
+    fprintf(stdout, "create report with brightness/contrast settings %.03f %.03f\n", brightness_contrast_ll, brightness_contrast_ul);
+  }
+
+
   bool isMosaic = false;
-  if (command.GetOptionWasSet("ReportTypeMosaic"))
-    isMosaic = true;
+  if (command.GetOptionWasSet("ReportType")) {
+    std::string bla = command.GetValueAsString("ReportType", "value");
+    if (command.GetValueAsString("ReportType", "value") == std::string("mosaic")) {
+      if (verbose)
+        fprintf(stdout, "Info: Selected mosaic report type\n");
+      isMosaic = true;
+    } else {
+      if (verbose)
+        fprintf(stdout, "Info: Selected default report type curvilinear\n");
+    }
+  }
 
   bool uidFixedFlag = false;
   if (command.GetOptionWasSet("UIDFixed"))
@@ -2344,10 +2398,6 @@ int main(int argc, char *argv[]) {
   if (input.size() == 0 || output.size() == 0 || mask.size() == 0) {
     return 1;
   }
-
-  verbose = false;
-  if (command.GetOptionWasSet("Verbose"))
-    verbose = true;
 
   if (command.GetOptionWasSet("SeriesName"))
     seriesIdentifierFlag = true;
@@ -2934,6 +2984,8 @@ int main(int argc, char *argv[]) {
         report->ReportSeriesInstanceUID = seriesIdentifier;
         report->SOPInstanceUID = SOPInstanceUID;
         report->InstitutionName = InstitutionName;
+        report->BrightnessContrastLL = brightness_contrast_ll;
+        report->BrightnessContrastUL = brightness_contrast_ul;
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
         if (uidFixedFlag) {

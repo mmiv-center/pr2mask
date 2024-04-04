@@ -34,6 +34,8 @@ typedef struct {
   std::string key_fact;
   std::string key_unit;
   std::string InstitutionName;
+  float BrightnessContrastLL;
+  float BrightnessContrastUL;
   CImageType::Pointer keyImage;
   std::vector<std::array<int, 2> > keyImagePositions;
   std::vector<std::string> keyImageTexts;

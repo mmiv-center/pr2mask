@@ -93,7 +93,7 @@ struct Polygon {
 using ImageType2D = itk::Image<PixelType, 2>;
 
 void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
-                           std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose) {
+                           std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose, float lowerT, float upperT) {
 
   typedef itk::ImageFileReader<ImageType2D> ReaderType;
   ReaderType::Pointer r = ReaderType::New();
@@ -194,8 +194,9 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   histogramGenerator->Compute();
   using HistogramType = HistogramGeneratorType::HistogramType;
   const HistogramType *histogram = histogramGenerator->GetOutput();
-  double lowerT = 0.01;
-  double upperT = 0.999;
+  // defined in calling function
+  //double lowerT = 0.01;
+  //double upperT = 0.999;
   double t1 = -1;
   double t2 = -1;
   double sum = 0;
@@ -1587,8 +1588,50 @@ int main(int argc, char *argv[]) {
   command.SetOption("NoBiomarker", "b", false, "Do not create biomarker to speed up mask processing");
   command.SetOptionLongTag("NoBiomarker", "nobiomarker");
 
+  command.SetOption("BrightnessContrastLL", "d", false, "Set threshold for brightness / contrast based on cummulative histogram lower limit (percentage dark pixel 0.01).");
+  command.SetOptionLongTag("BrightnessContrastLL", "brightness-contrast-ll");
+  command.AddOptionField("BrightnessContrastLL", "value", MetaCommand::FLOAT, false);
+
+  command.SetOption("BrightnessContrastUL", "b", false, "Set threshold for brightness / contrast based on cummulative histogram upper limit (percentage bright pixel 0.999).");
+  command.SetOptionLongTag("BrightnessContrastUL", "brightness-contrast-ul");
+  command.AddOptionField("BrightnessContrastUL", "value", MetaCommand::FLOAT, false);
+
+
   if (!command.Parse(argc, argv)) {
     return 1;
+  }
+
+  bool verbose = false;
+  if (command.GetOptionWasSet("Verbose"))
+    verbose = true;
+
+  float brightness_contrast_ll = 0.01;
+  float brightness_contrast_ul = 0.999;
+  float brightnesscontrast_ll = brightness_contrast_ll;
+  float brightnesscontrast_ul = brightness_contrast_ul;
+  if (command.GetOptionWasSet("BrightnessContrastLL")) {
+    brightnesscontrast_ll = command.GetValueAsFloat("BrightnessContrastLL", "value");
+    if (brightnesscontrast_ll < 0 || brightnesscontrast_ll > 1.0) {
+      fprintf(stdout, "Warning: lower brightness values not between 0 and 1. Adjusted to 0.01.\n");
+      brightnesscontrast_ll = 0.01;
+    }
+  }
+  if (command.GetOptionWasSet("BrightnessContrastUL")) {
+    brightnesscontrast_ul = command.GetValueAsFloat("BrightnessContrastUL", "value");
+    if (brightnesscontrast_ul < 0 || brightnesscontrast_ul > 1.0) {
+      fprintf(stdout, "Warning: upper brightness values not between 0 and 1. Adjusted to 0.999.\n");
+      brightnesscontrast_ul = 0.999;
+    }
+  }
+  if (brightnesscontrast_ul < brightnesscontrast_ll) {
+    float tmp = brightnesscontrast_ll;
+    brightnesscontrast_ll = brightnesscontrast_ul;
+    brightnesscontrast_ul = tmp;
+  }
+  brightness_contrast_ll = brightnesscontrast_ll;
+  brightness_contrast_ul = brightnesscontrast_ul;
+  if (verbose) {
+    fprintf(stdout, "create report with brightness/contrast settings %.03f %.03f\n", brightness_contrast_ll, brightness_contrast_ul);
   }
 
   bool biomarker = true;
@@ -1606,10 +1649,6 @@ int main(int argc, char *argv[]) {
   if (input.size() == 0 || output.size() == 0) {
     return 1;
   }
-
-  bool verbose = false;
-  if (command.GetOptionWasSet("Verbose"))
-    verbose = true;
 
   if (command.GetOptionWasSet("SeriesName"))
     seriesIdentifierFlag = true;
@@ -2034,7 +2073,7 @@ int main(int argc, char *argv[]) {
             }
             // it would be cool to add a filtered version of the labels as well, but that works only for a single label...  or?
             writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
-                                  newFusedSOPInstanceUID, verbose);
+                                  newFusedSOPInstanceUID, verbose, brightness_contrast_ll, brightness_contrast_ul);
             // here is a good place to extract some measures from the masked image (mean, min, max, median, sum, intensity, histogram?)
           }
 
