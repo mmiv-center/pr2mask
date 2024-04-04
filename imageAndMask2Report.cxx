@@ -1025,7 +1025,7 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
 
 
 void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
-                           std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose) {
+                           std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose, float lowerT, float upperT) {
 
   typedef itk::ImageFileReader<ImageType2D> ReaderType;
   ReaderType::Pointer r = ReaderType::New();
@@ -1127,8 +1127,8 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   histogramGenerator->Compute();
   using HistogramType = HistogramGeneratorType::HistogramType;
   const HistogramType *histogram = histogramGenerator->GetOutput();
-  double lowerT = 0.01;
-  double upperT = 0.999;
+  //double lowerT = 0.01;
+  //double upperT = 0.999;
   double t1 = -1;
   double t2 = -1;
   double sum = 0;
@@ -2860,7 +2860,7 @@ int main(int argc, char *argv[]) {
             con->SetBackgroundValue(0);
             con->Update(); */
             writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
-                                  newFusedSOPInstanceUID, verbose);
+                                  newFusedSOPInstanceUID, verbose, brightness_contrast_ll, brightness_contrast_ul);
             // here is a good place to extract some measures from the masked image (mean, min, max, median, sum, intensity, histogram?)
           }
 
