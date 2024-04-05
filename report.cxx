@@ -31,7 +31,7 @@
 
 unsigned char image_buffer[HEIGHT][WIDTH];
 unsigned char image_buffer512[512][512];
-unsigned char image_buffer828[828][512];
+unsigned char image_buffer828[512][828];
 
 Report *getDefaultReportStruct() {
   Report *report = new Report;
@@ -249,8 +249,8 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
       int idx = newy * xmax + newx;
       if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
         continue;
-      if (image_buffer828[yi][xi] == 0)
-        continue;
+      //if (image_buffer828[yi][xi] == 0)
+      //  continue;
 
       // instead of blending we need to use a fixed overlay color
       // we have image information between current_image_min_value and current_image_max_value
