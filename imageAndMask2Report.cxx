@@ -329,12 +329,27 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
     }
     // now make the bounding box bigger
     std::vector<double> biggerBB(6);
-    biggerBB[0] = boundingBox[0] - (boundingBox[3]-boundingBox[0]);
-    biggerBB[1] = boundingBox[1] - (boundingBox[4]-boundingBox[1]);
-    biggerBB[2] = boundingBox[2] - (boundingBox[5]-boundingBox[2]);
-    biggerBB[3] = boundingBox[3] + (boundingBox[3]-boundingBox[0]);
-    biggerBB[4] = boundingBox[4] + (boundingBox[4]-boundingBox[1]);
-    biggerBB[5] = boundingBox[5] + (boundingBox[5]-boundingBox[2]);
+    // A bounding box can be too small if the label is tiny, we should enlarge the 
+    // bounding box suffiently to reach a minimum of maybe 30% of the space in the volume.
+    float enlarge[3];
+    enlarge[0] = (boundingBox[3]-boundingBox[0]);
+    enlarge[1] = (boundingBox[4]-boundingBox[1]);
+    enlarge[2] = (boundingBox[5]-boundingBox[2]);
+    // if total volume still too small make it even larger, boundingBox size is in mm
+    if (enlarge[0]*3 < 100)
+      enlarge[0] = 100 - enlarge[0];
+    if (enlarge[1]*3 < 100)
+      enlarge[1] = 100 - enlarge[1];
+    if (enlarge[2]*3 < 100)
+      enlarge[2] = 100 - enlarge[2];
+
+
+    biggerBB[0] = boundingBox[0] - enlarge[0];
+    biggerBB[1] = boundingBox[1] - enlarge[1];
+    biggerBB[2] = boundingBox[2] - enlarge[2];
+    biggerBB[3] = boundingBox[3] + enlarge[0];
+    biggerBB[4] = boundingBox[4] + enlarge[1];
+    biggerBB[5] = boundingBox[5] + enlarge[2];
 
     for (int counter = 0; counter < 6; counter++)
       boundingBox[counter] = biggerBB[counter];
