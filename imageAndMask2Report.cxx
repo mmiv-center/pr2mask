@@ -446,7 +446,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
         ++targetRGBIterator;
       }
     } // Left image done
-    { // Right top image
+    { // Right top image (flip 180)
 
       targetLocationStart[0] = base_image_sizeLW;
       targetLocationStart[1] = roi * base_image_sizeLH;
@@ -474,6 +474,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
         float idx_percent[2];
         idx_percent[0] = ((float)idx[0] - (float)targetLocationStart[0])/((float)targetLocationEnd[0]-(float)targetLocationStart[0]);
         idx_percent[1] = ((float)idx[1] - (float)targetLocationStart[1])/((float)targetLocationEnd[1]-(float)targetLocationStart[1]);
+        idx_percent[1] = 1.0f - idx_percent[1];
         // the above should be between 0.0 and 1.0, test here
         if (idx_percent[0] < 0.0 || idx_percent[0]>1.0) {
           fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[0]);
@@ -578,6 +579,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
         idx_percent[0] = ((float)idx[0] - (float)targetLocationStart[0])/((float)targetLocationEnd[0]-(float)targetLocationStart[0]);
         idx_percent[1] = ((float)idx[1] - (float)targetLocationStart[1])/((float)targetLocationEnd[1]-(float)targetLocationStart[1]);
         // the above should be between 0.0 and 1.0, test here
+        idx_percent[1] = 1.0f - idx_percent[1];
         if (idx_percent[0] < 0.0 || idx_percent[0]>1.0) {
           fprintf(stderr, "Error: idx_percent is not 0..1 but %f. Should not happen\n", idx_percent[0]);
         }
