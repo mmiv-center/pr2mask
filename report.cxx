@@ -32,6 +32,8 @@
 unsigned char image_buffer[HEIGHT][WIDTH];
 unsigned char image_buffer512[512][512];
 unsigned char image_buffer828[512][828];
+unsigned int image_buffer_gen_size[2] = {0,0};
+unsigned char **image_buffer_gen = NULL;
 
 Report *getDefaultReportStruct() {
   Report *report = new Report;
@@ -96,7 +98,28 @@ void draw_bitmap(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int y) {
   }
 }
 
-void draw_bitmap512(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int y) {
+
+void addBar(CImageType::Pointer img, int height) {
+  CImageType::RegionType kregion = img->GetLargestPossibleRegion();
+  using ImageSizeType = typename CImageType::SizeType;
+  ImageSizeType regionSize;
+  regionSize[0] = kregion.GetSize()[0];
+  regionSize[1] = height;
+
+  kregion.SetSize(regionSize);
+  itk::ImageRegionIteratorWithIndex<CImageType> kIterator(img, kregion);
+  kIterator.GoToBegin();
+  while(!kIterator.IsAtEnd()) {
+    CPixelType value = kIterator.Value(); 
+    value.SetRed((int)(255));
+    value.SetGreen((int)(77));
+    value.SetBlue((int)(5));
+    kIterator.Set(value);
+    ++kIterator;
+  }
+}
+
+void draw_bitmap_gen(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int y) {
   FT_Int i, j, p, q;
   FT_Int x_max = x + bitmap->width;
   FT_Int y_max = y + bitmap->rows;
@@ -106,29 +129,14 @@ void draw_bitmap512(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int y
       if (i < 0 || j < 0 || i >= width || j >= height)
         continue;
 
-      image_buffer512[j][i] |= bitmap->buffer[q * bitmap->width + p];
-    }
-  }
-}
-
-void draw_bitmap828(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int y) {
-  FT_Int i, j, p, q;
-  FT_Int x_max = x + bitmap->width;
-  FT_Int y_max = y + bitmap->rows;
-
-  for (i = x, p = 0; i < x_max; i++, p++) {
-    for (j = y, q = 0; j < y_max; j++, q++) {
-      if (i < 0 || j < 0 || i >= width || j >= height)
-        continue;
-
-      image_buffer828[j][i] |= bitmap->buffer[q * bitmap->width + p];
+      image_buffer_gen[j][i] |= bitmap->buffer[q * bitmap->width + p];
     }
   }
 }
 
 
-// now for mosaic we need 828x512
-void addToReport828(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
+// generic method using dynamic array for image_buffer_gen
+void addToReportGen(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
   FT_Library library;
 
   double angle;
@@ -163,8 +171,8 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
   int text_lines = 1;
 
   float repeat_spacing = 1.0f;
-  int xmax = 828;
-  int ymax = 512;
+  int xmax = image_buffer_gen_size[0];
+  int ymax = image_buffer_gen_size[1];
   num_chars = stext.size();
 
   int px = posx;
@@ -173,7 +181,12 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
   int py = posy;
   // start_py + 2.0 * (font_size);
 
-  memset(image_buffer828, 0, sizeof(unsigned char) * 828 * 512);
+  // our image is not of that size but much larger (repeated mosaic tiles in y)
+  // reset image_buffer_gen now
+  for (int i = 0; i < image_buffer_gen_size[1]; i++) {
+    if (image_buffer_gen[i])
+      memset(image_buffer_gen[i], 0, sizeof(unsigned char) * image_buffer_gen_size[0]);
+  }
 
   angle = radiants;
   target_height = 512;
@@ -221,7 +234,7 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
       continue; /* ignore errors */
 
     /* now, draw to our target surface (convert position) draws into image_buffer */
-    draw_bitmap828(&slot->bitmap, 828, 512, slot->bitmap_left, target_height - slot->bitmap_top);
+    draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top);
 
     /* increment pen position */
     pen.x += slot->advance.x;
@@ -237,9 +250,9 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
   float current_image_min_value = 0.0f;
   float current_image_max_value = 255.0f;
   unsigned char *bvals = (unsigned char *)buffer;
-  for (int yi = 0; yi < 512; yi++) {
-    for (int xi = 0; xi < 828; xi++) {
-      if (image_buffer828[yi][xi] == 0)
+  for (int yi = 0; yi < image_buffer_gen_size[1]; yi++) {
+    for (int xi = 0; xi < image_buffer_gen_size[0]; xi++) {
+      if (image_buffer_gen[yi][xi] == 0)
         continue;
       // I would like to copy the value from image over to
       // the buffer. At some good location...
@@ -256,7 +269,7 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
       // we have image information between current_image_min_value and current_image_max_value
       // we need to scale the image_buffer by those values.
       float f = 0;
-      float v = 1.0f * image_buffer828[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
+      float v = 1.0f * image_buffer_gen[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
       float w = 1.0f * bvals[idx] / current_image_max_value;
       float alpha_blend = (v + w * (1.0f - v));
 
@@ -266,147 +279,6 @@ void addToReport828(char *buffer, std::string font_file, int font_size, std::str
     }
   }
 }
-
-
-void addToReport512(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
-  FT_Library library;
-
-  double angle;
-  int target_height;
-  int n, num_chars;
-
-  // int font_length = 20;
-
-  std::string font_path = font_file;
-  // int font_size = 42;
-  int face_index = 0;
-
-  FT_Face face;
-  FT_GlyphSlot slot;
-  FT_Matrix matrix; /* transformation matrix */
-  FT_Vector pen;    /* untransformed origin  */
-  FT_Error error;
-  // gdcm::ImageReader reader;
-
-  // unsigned long len = WIDTH * HEIGHT * 8;
-  //  char *buffer = new char[len];
-
-  error = FT_Init_FreeType(&library); /* initialize library */
-
-  if (error != 0) {
-    fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
-    return;
-  }
-
-  int start_px = 40;
-  int start_py = 40;
-  int text_lines = 1;
-
-  float repeat_spacing = 1.0f;
-  int xmax = 512;
-  int ymax = 512;
-  num_chars = stext.size();
-
-  int px = posx;
-  // WIDTH - ((num_chars + 2) * font_size - start_px);
-  // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
-  int py = posy;
-  // start_py + 2.0 * (font_size);
-
-  memset(image_buffer512, 0, sizeof(unsigned char) * 512 * 512);
-
-  angle = radiants;
-  target_height = 512;
-
-  error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
-
-  if (face == NULL) {
-    fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
-    return;
-  }
-
-  int font_size_in_pixel = font_size;
-  error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
-  /* error handling omitted */
-  if (error != 0) {
-    fprintf(stderr, "\033[0;31mError\033[0;31m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
-    return;
-  }
-
-  slot = face->glyph;
-
-  /* set up matrix */
-  matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
-  matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
-  matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
-  matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
-
-  /* the pen position in 26.6 cartesian space coordinates; */
-  /* start at (300,200) relative to the upper left corner  */
-  //pen.x = (num_chars * 1 * 64);
-  pen.x = (1 * 64);
-  pen.y = (target_height - 40) * 64; // the 60 here is related to the font size!
-
-  const char *text = stext.c_str();
-  for (n = 0; n < num_chars; n++) {
-    if (text[n] == '\n') {
-      continue; // ignore newlines
-    }
-
-    /* set transformation */
-    FT_Set_Transform(face, &matrix, &pen);
-
-    error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-    if (error)
-      continue; /* ignore errors */
-
-    /* now, draw to our target surface (convert position) draws into image_buffer */
-    draw_bitmap512(&slot->bitmap, 512, 512, slot->bitmap_left, target_height - slot->bitmap_top);
-
-    /* increment pen position */
-    pen.x += slot->advance.x;
-    pen.y += slot->advance.y;
-  }
-
-  FT_Done_Face(face);
-
-  // int px = start_px;
-  // int py = start_py + 10.0 * (font_size);
-  //  (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
-
-  float current_image_min_value = 0.0f;
-  float current_image_max_value = 255.0f;
-  unsigned char *bvals = (unsigned char *)buffer;
-  for (int yi = 0; yi < 512; yi++) {
-    for (int xi = 0; xi < 512; xi++) {
-      if (image_buffer512[yi][xi] == 0)
-        continue;
-      // I would like to copy the value from image over to
-      // the buffer. At some good location...
-
-      int newx = px + xi;
-      int newy = py + yi;
-      int idx = newy * xmax + newx;
-      if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
-        continue;
-      if (image_buffer512[yi][xi] == 0)
-        continue;
-
-      // instead of blending we need to use a fixed overlay color
-      // we have image information between current_image_min_value and current_image_max_value
-      // we need to scale the image_buffer by those values.
-      float f = 0;
-      float v = 1.0f * image_buffer512[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
-      float w = 1.0f * bvals[idx] / current_image_max_value;
-      float alpha_blend = (v + w * (1.0f - v));
-
-      // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
-      bvals[idx] = (unsigned char)std::max(
-          0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
-    }
-  }
-}
-
 
 void addToReport(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
   FT_Library library;
@@ -580,6 +452,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
   char *buffer = new char[len];
   char *buffer_color = new char[WIDTH * HEIGHT * 3];
 
+
   error = FT_Init_FreeType(&library); /* initialize library */
 
   if (error != 0) {
@@ -594,6 +467,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
 
   // add the key image
   if (report->keyImage) {
+
     // for that keyImage    
     CImageType::RegionType kregion = report->keyImage->GetLargestPossibleRegion();
     int KWIDTH = kregion.GetSize()[0];
@@ -602,6 +476,34 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
     char *kbuffer_color = new char[KWIDTH * KHEIGHT * 3];
     memset(&kbuffer[0], 0, sizeof(char)*KWIDTH*KHEIGHT);
     memset(&kbuffer_color[0], 0, sizeof(char)*KWIDTH*KHEIGHT*3);
+
+    // create space for image_buffer unsigned char image_buffer828[512][828];
+    if (image_buffer_gen) {
+      // delete its memory before we create a new array
+      for (int i = 0; i < image_buffer_gen_size[1]; i++) {
+        if (image_buffer_gen[i]) 
+          free(image_buffer_gen[i]);
+      }
+      if (image_buffer_gen)
+        free(image_buffer_gen);
+      image_buffer_gen_size[0] = 0;
+      image_buffer_gen_size[1] = 0;
+    }
+    // allocate new space for the image buffer
+    image_buffer_gen = (unsigned char**) malloc(KHEIGHT * sizeof(unsigned char*));
+    if (image_buffer_gen) { 
+      for (int i = 0; i < KHEIGHT; i++) {
+        image_buffer_gen[i] = (unsigned char*)malloc(KWIDTH * sizeof(unsigned char));
+        if (!image_buffer_gen[i]) {
+          fprintf(stderr, "Error allocating memory for report image\n");
+          fflush(stderr);
+          exit(-1); // give up
+        }
+      }
+    }
+    // remember that size for the next free
+    image_buffer_gen_size[0] = KWIDTH;
+    image_buffer_gen_size[1] = KHEIGHT;
 
     if (0) {
       // to compute a z-score we can use the publication:
@@ -675,58 +577,26 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
       }
     }
 
-    //CImageType::PixelContainer *kcontainer;
-    //kcontainer = report->keyImage->GetPixelContainer();
-    //CImageType::PixelType *kbuffer2 = kcontainer->GetBufferPointer();
+    // use the generic method to draw text using image_buffer_gen
+    // mark the top of the image as "Generated by AI"
+    addBar(report->keyImage, 20); // in dark yellow
+    addToReportGen(kbuffer, font_file, 6, std::string("[MMIV.no " + report->ReportType + " report, Segmentation generated with AI]"), 10, -25, 0);  
+    addToReportGen(kbuffer, font_file, 6, std::string("[areas of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, -5, 0);  
+    if (report->VersionString.size() > 0)
+      addToReportGen(kbuffer, font_file, 6, report->VersionString, 10, 15, 0);  
 
-    //using IteratorTypeCImage = itk::ImageRegionIteratorWithIndex< CImageType >;
-    // Create a buffer that can hold our text, we can merge it below with the kbuffer_color before
-    // we write it.
-
-    // draw the numbers on the kbuffer
-    //addToReport512(kbuffer, font_file, 12, std::string("O"), 0, 0, 0);  
-    // warn users that this is a curvilinear reformat image
-    if (KWIDTH == 828) {
-
-      addToReport828(kbuffer, font_file, 6, std::string("[MMIV.no curvilinear reformat]"), 10, -20, 0);  
-      addToReport828(kbuffer, font_file, 6, std::string("[areas of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, 0, 0);  
-      if (report->VersionString.size() > 0)
-        addToReport828(kbuffer, font_file, 6, report->VersionString, 10, 20, 0);  
-
-      for (int k = 0; k < report->keyImagePositions.size(); k++) {
-        //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
-        //fflush(stdout);
-        std::string::size_type pos = 0;
-        if ( ( pos = report->keyImageTexts[k].find("z:") ) != std::string::npos) {
-          std::string piece1 = report->keyImageTexts[k].substr(0, pos);
-          std::string piece2 = report->keyImageTexts[k].substr(pos);
-          //fprintf(stdout, "string: %s <-> %s", piece1.c_str(), piece2.c_str());
-          addToReport828(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
-          addToReport828(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35, report->keyImagePositions[k][1]-50, 0);  
-        } else {
-          addToReport828(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
-        }
-      }
-
-    } else {
-      addToReport512(kbuffer, font_file, 6, std::string("[MMIV.no curvilinear reformat]"), 10, -20, 0);  
-      addToReport512(kbuffer, font_file, 6, std::string("[areas of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, 0, 0);  
-      if (report->VersionString.size() > 0)
-        addToReport512(kbuffer, font_file, 6, report->VersionString, 10, 20, 0);  
-
-      for (int k = 0; k < report->keyImagePositions.size(); k++) {
-        //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
-        //fflush(stdout);
-        std::string::size_type pos = 0;
-        if ( ( pos = report->keyImageTexts[k].find("z:") ) != std::string::npos) {
-          std::string piece1 = report->keyImageTexts[k].substr(0, pos);
-          std::string piece2 = report->keyImageTexts[k].substr(pos);
-          //fprintf(stdout, "string: %s <-> %s", piece1.c_str(), piece2.c_str());
-          addToReport512(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
-          addToReport512(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35, report->keyImagePositions[k][1]-50, 0);  
-        } else {
-          addToReport512(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
-        }
+    for (int k = 0; k < report->keyImagePositions.size(); k++) {
+      //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
+      //fflush(stdout);
+      std::string::size_type pos = 0;
+      if ( ( pos = report->keyImageTexts[k].find("z:") ) != std::string::npos) {
+        std::string piece1 = report->keyImageTexts[k].substr(0, pos);
+        std::string piece2 = report->keyImageTexts[k].substr(pos);
+        //fprintf(stdout, "string: %s <-> %s", piece1.c_str(), piece2.c_str());
+        addToReportGen(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
+        addToReportGen(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35, report->keyImagePositions[k][1]-50, 0);  
+      } else {
+        addToReportGen(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
       }
     }
 
@@ -738,22 +608,27 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
       CImageType::IndexType kidx = kIterator.GetIndex(); 
       //fprintf(stdout, "idx %d %d: %d %d %d\n", kidx[0], kidx[1], val[0], val[1], val[2]);
       //fflush(stdout);
-      int ttt = kbuffer[kidx[1]*KWIDTH+kidx[0]]; // a text color other than white is 255/255,255/237,255/160 (yellowish-orange)
+      int ttt = (unsigned char)kbuffer[kidx[1]*KWIDTH+kidx[0]]; // a text color other than white is 255/255,255/237,255/160 (yellowish-orange)
 
+      int c1 = (int)val[0];
+      int c2 = (int)val[1];
+      int c3 = (int)val[2];
 
-      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+0] = (val[0] |= ttt);
-      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+1] = (val[1] |= ttt);
-      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+2] = (val[2] |= ttt);
-      /*
-      float alpha_a = 1.0 / (float)ttt/255.0;
-      float alpha_b = 0.0;
+      // now use alpha blending instead of |=
+
+      //      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+0] = (c1 |= ttt);
+      //      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+1] = (c2 |= ttt);
+      //      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+2] = (c3 |= ttt);
+      
+      float alpha_a = (float)(ttt/255.0);
+      float alpha_b = 0.5;
       float alpha = alpha_a + alpha_b*(1.0 - alpha_a); // alpha of text is ttt/255, alpha of b is 0
       float C_a_r = 1.0;
       float C_a_g = 237.0/255.0;
       float C_a_b = 160.0/255.0;
-      float C_b_r = val[0]/255.0;
-      float C_b_g = val[1]/255.0;
-      float C_b_b = val[2]/255.0;
+      float C_b_r = c1/255.0;
+      float C_b_g = c2/255.0;
+      float C_b_b = c3/255.0;
       float Cr = (C_a_r * alpha_a + (C_b_r * alpha_b *(1.0 - alpha_a)))/alpha;
       float Cg = (C_a_g * alpha_a + (C_b_g * alpha_b *(1.0 - alpha_a)))/alpha;
       float Cb = (C_a_b * alpha_a + (C_b_b * alpha_b *(1.0 - alpha_a)))/alpha;
@@ -763,7 +638,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
 
       kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+0] = 255.0 * Cr;
       kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+1] = 255.0 * Cg;
-      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+2] = 255.0 * Cb; */
+      kbuffer_color[3*(kidx[1]*KWIDTH+kidx[0])+2] = 255.0 * Cb;
 
       ++kIterator;
     }

@@ -363,7 +363,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
       RegionType targetRegion(targetIndex, targetSize); // the region we want to fill in the output key image
       itk::ImageRegionIteratorWithIndex<CImageType> targetRGBIterator(keyImage, targetRegion);
 
-      // finished computing the maximum inclosing bounding box for this region of interest
+      // finished computing the maximum enclosing bounding box for this region of interest
       // do we need that? We could zoom in, but that is costly... with a zoom factor. 
       // We would want to see the region of interest and double the space around the region.
       targetRGBIterator.GoToBegin(); // 2D Volume of curved slice
@@ -385,9 +385,30 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
         itk::ContinuousIndex<double, 3> pixel;
         itk::ContinuousIndex<double, 3> floatIndexA;
         // use x as fastest running index and y as second fast running, third dimension is at mid-point
-        pixel[0] = (float)boundingBox[0] + idx_percent[0]*(boundingBox[3]-boundingBox[0]); // in pixel coordinates of image, based on boundingBox of one dimension
-        pixel[1] = (float)boundingBox[1] + idx_percent[1]*(boundingBox[4]-boundingBox[1]);
-        pixel[2] = (float)boundingBox[2] + (boundingBox[5]-boundingBox[2])/2.0f; // middle
+        // TODO: scaling of voxel size is not taken care of. We need to move differently based on pixel size
+        //auto voxelSize = image->GetSpacing();
+        float start0 = boundingBox[0];
+        float start1 = boundingBox[1];
+        float start2 = boundingBox[2];
+        float sx = (boundingBox[3]-boundingBox[0]);
+        float sy = (boundingBox[4]-boundingBox[1]);
+        float sz = (boundingBox[5]-boundingBox[2]);
+        if (sx > sy) {
+          // adjust the other bounding box to the same size, and center it
+          float midy = start1 + sy/2.0;
+          start1 = midy - (sx/2.0);
+          sy = sx;
+        } else {
+          // adjust the other bounding box to the same size, and center it
+          float midx = start0 + sx/2.0;
+          start0 = midx - (sy/2.0);
+          sx = sy;
+        }
+        // aspect ratio of output image is 1, so bounding box needs to be adjusted in the smaller dimension to have
+        // same aspect ratio based on larger dimension sx or sy
+        pixel[0] = (float)start0 + idx_percent[0]*sx; // in pixel coordinates of image, based on boundingBox of one dimension
+        pixel[1] = (float)start1 + idx_percent[1]*sy;
+        pixel[2] = (float)start2 + sz/2.0f; // middle
 
         image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
 
@@ -463,10 +484,34 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
 
         itk::ContinuousIndex<double, 3> pixel;
         itk::ContinuousIndex<double, 3> floatIndexA;
+
+        float start0 = boundingBox[0];
+        float start1 = boundingBox[1];
+        float start2 = boundingBox[2];
+        float sx = (boundingBox[3]-boundingBox[0]);
+        float sy = (boundingBox[4]-boundingBox[1]);
+        float sz = (boundingBox[5]-boundingBox[2]);
+        if (sz > sx) {
+          // adjust the other bounding box to the same size, and center it
+          float midx = start0 + sx/2.0;
+          start0 = midx - (sz/2.0);
+          sx = sz;
+        } else {
+          // adjust the other bounding box to the same size, and center it
+          float midz = start2 + sz/2.0;
+          start2 = midz - (sx/2.0);
+          sz = sx;
+        }
+        // aspect ratio of output image is 1, so bounding box needs to be adjusted in the smaller dimension to have
+        // same aspect ratio based on larger dimension sx or sy
+        pixel[0] = (float)start0 + idx_percent[0]*sx; // in pixel coordinates of image, based on boundingBox of one dimension
+        pixel[1] = (float)start1 + sy/2.0;
+        pixel[2] = (float)start2 + idx_percent[1]*sz; // middle
+
         // use x as fastest running index and y as second fast running, third dimension is at mid-point
-        pixel[0] = (float)boundingBox[0] + idx_percent[0]*(boundingBox[3]-boundingBox[0]); // in pixel coordinates of image, based on boundingBox of one dimension
-        pixel[1] = (float)boundingBox[1] + (boundingBox[4]-boundingBox[1])/2.0f; // middle
-        pixel[2] = (float)boundingBox[2] + idx_percent[1]*(boundingBox[5]-boundingBox[2]);
+        //pixel[0] = (float)boundingBox[0] + idx_percent[0]*(boundingBox[3]-boundingBox[0]); // in pixel coordinates of image, based on boundingBox of one dimension
+        //pixel[1] = (float)boundingBox[1] + (boundingBox[4]-boundingBox[1])/2.0f; // middle
+        //pixel[2] = (float)boundingBox[2] + idx_percent[1]*(boundingBox[5]-boundingBox[2]);
 
         image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
 
@@ -542,10 +587,34 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
 
         itk::ContinuousIndex<double, 3> pixel;
         itk::ContinuousIndex<double, 3> floatIndexA;
+
+        float start0 = boundingBox[0];
+        float start1 = boundingBox[1];
+        float start2 = boundingBox[2];
+        float sx = (boundingBox[3]-boundingBox[0]);
+        float sy = (boundingBox[4]-boundingBox[1]);
+        float sz = (boundingBox[5]-boundingBox[2]);
+        if (sz > sy) {
+          // adjust the other bounding box to the same size, and center it
+          float midy = start1 + sy/2.0;
+          start1 = midy - (sz/2.0);
+          sy = sz;
+        } else {
+          // adjust the other bounding box to the same size, and center it
+          float midz = start2 + sz/2.0;
+          start2 = midz - (sy/2.0);
+          sz = sy;
+        }
+        // aspect ratio of output image is 1, so bounding box needs to be adjusted in the smaller dimension to have
+        // same aspect ratio based on larger dimension sx or sy
+        pixel[0] = (float)start0 + sx/2.0;; // in pixel coordinates of image, based on boundingBox of one dimension
+        pixel[1] = (float)start1 + idx_percent[0]*sy;
+        pixel[2] = (float)start2 + idx_percent[1]*sz; // middle
+
         // use x as fastest running index and y as second fast running, third dimension is at mid-point
-        pixel[0] = (float)boundingBox[0] + (boundingBox[3]-boundingBox[0])/2.0f; // middle
-        pixel[1] = (float)boundingBox[1] + idx_percent[0]*(boundingBox[4]-boundingBox[1]); // in pixel coordinates of image, based on boundingBox of one dimension
-        pixel[2] = (float)boundingBox[2] + idx_percent[1]*(boundingBox[5]-boundingBox[2]);
+        //pixel[0] = (float)boundingBox[0] + (boundingBox[3]-boundingBox[0])/2.0f; // middle
+        //pixel[1] = (float)boundingBox[1] + idx_percent[0]*(boundingBox[4]-boundingBox[1]); // in pixel coordinates of image, based on boundingBox of one dimension
+        //pixel[2] = (float)boundingBox[2] + idx_percent[1]*(boundingBox[5]-boundingBox[2]);
 
         image->TransformPhysicalPointToContinuousIndex(pixel, floatIndexA);
 
@@ -2536,6 +2605,11 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  if (maskSlices.size() == 0) {
+    fprintf(stderr, "Error: no mask images found.\n");
+    return EXIT_FAILURE;
+  }
+
   typedef itk::ImageSeriesReader<ImageType> ReaderType;
   ReaderType::Pointer reader = ReaderType::New();
 
@@ -3001,6 +3075,7 @@ int main(int argc, char *argv[]) {
         report->InstitutionName = InstitutionName;
         report->BrightnessContrastLL = brightness_contrast_ll;
         report->BrightnessContrastUL = brightness_contrast_ul;
+        report->ReportType = (isMosaic?"mosaic":"curvilinear");
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
         if (uidFixedFlag) {

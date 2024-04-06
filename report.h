@@ -36,6 +36,7 @@ typedef struct {
   std::string InstitutionName;
   float BrightnessContrastLL;
   float BrightnessContrastUL;
+  std::string ReportType;
   CImageType::Pointer keyImage;
   std::vector<std::array<int, 2> > keyImagePositions;
   std::vector<std::string> keyImageTexts;
