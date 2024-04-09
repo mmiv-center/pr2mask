@@ -2418,6 +2418,14 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("BrightnessContrastUL", "brightness-contrast-ul");
   command.AddOptionField("BrightnessContrastUL", "value", MetaCommand::FLOAT, false);
 
+  // float mean_mean = 23.31783, float mean_stds = 4.539313
+  command.SetOption("ZScoreMean", "z", false, "Set z-scores mean value (default: 23.31783).");
+  command.SetOptionLongTag("ZScoreMean", "z-score-mean");
+  command.AddOptionField("ZScoreMean", "value", MetaCommand::FLOAT, false);
+
+  command.SetOption("ZScoreStd", "s", false, "Set z-score standard deviation (default: 4.539313).");
+  command.SetOptionLongTag("ZScoreStd", "z-score-std");
+  command.AddOptionField("ZScoreStd", "value", MetaCommand::FLOAT, false);
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -2426,6 +2434,15 @@ int main(int argc, char *argv[]) {
   verbose = false;
   if (command.GetOptionWasSet("Verbose"))
     verbose = true;
+
+  float mean_mean = 23.31783;
+  float mean_stds = 4.539313;
+  if (command.GetOptionWasSet("ZScoreMean")) {
+    mean_mean = command.GetValueAsFloat("ZScoreMean", "value");
+  }
+  if (command.GetOptionWasSet("ZScoreStd")) {
+    mean_stds = command.GetValueAsFloat("ZScoreStd", "value");
+  }
 
 
   float brightness_contrast_ll = 0.01;
@@ -3115,7 +3132,8 @@ int main(int argc, char *argv[]) {
           create_directories(p_out.parent_path());
         }
         report->filename = std::string(p_out.c_str());
-        saveReport(report);
+        // default values only make sense if used for the spine segmentation project
+        saveReport(report, mean_mean, mean_stds);
 
         // add measures to json output, make sure to keep values from previous iteration
         if (!resultJSON.contains("measures")) {
