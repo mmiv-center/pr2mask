@@ -275,7 +275,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
     itk::LinearInterpolateImageFunction<FloatImageType, double>::New();
   interpolatorBlue->SetInputImage(smoothBlue);
 
-  float f = 0.7;
+  float f = 0.4; // weight of the underlay, 0.1 is mostly mask visible
 
   for (unsigned int roi = 0; roi < labelMap->GetNumberOfLabelObjects(); ++roi) {
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(roi); // the label number is the connected component number - not the one label as mask
@@ -1335,7 +1335,7 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   redSIterator.GoToBegin();
   greenSIterator.GoToBegin();
   blueSIterator.GoToBegin();
-  float f = 0.7;
+  float f = 0.6; // weight of the underlay, at 0.1 only mask is visible
   float red, green, blue;
   while (!inputIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
     float scaledP = ((float) inputIterator.Get() - t1) / (t2 - t1);
@@ -3132,6 +3132,16 @@ int main(int argc, char *argv[]) {
           create_directories(p_out.parent_path());
         }
         report->filename = std::string(p_out.c_str());
+
+        // mark a report as empty in case there are no detected regions of interest
+        if (!report->keyImage || report->measures.size() == 0) {
+          // add to the summary
+          if (report->summary.size() > 0) {
+            report->summary[0].push_back(std::string(""));
+            report->summary[0].push_back(std::string("Empty report, no region of interest could be detected."));
+          }
+        }
+
         // default values only make sense if used for the spine segmentation project
         saveReport(report, mean_mean, mean_stds);
 
