@@ -277,7 +277,18 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
 
   float f = 0.4; // weight of the underlay, 0.1 is mostly mask visible
 
+  std::vector<std::pair<int,int>> sizeByROI;
   for (unsigned int roi = 0; roi < labelMap->GetNumberOfLabelObjects(); ++roi) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(roi); // the label number is the connected component number - not the one label as mask
+    sizeByROI.push_back(std::make_pair(labelObject->GetNumberOfPixels(), roi));
+  }
+  std::sort(sizeByROI.begin(), sizeByROI.end(), [](auto &left, auto &right) {
+    return left.first < right.first;
+  });
+
+  // TODO: sort roi's by size and start with the largest region of interest (top of the image)
+  for (unsigned int roi_idx = 0; roi_idx < sizeByROI.size(); ++roi_idx) {
+    unsigned int roi = sizeByROI[roi_idx].second;
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(roi); // the label number is the connected component number - not the one label as mask
     int label = labelObject->GetLabel();
 
