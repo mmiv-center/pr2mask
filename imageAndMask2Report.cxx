@@ -2439,9 +2439,15 @@ int main(int argc, char *argv[]) {
   float mean_stds = 4.539313;
   if (command.GetOptionWasSet("ZScoreMean")) {
     mean_mean = command.GetValueAsFloat("ZScoreMean", "value");
+    if (verbose) {
+      fprintf(stdout, "read new ZScoreMean from command line: %f\n", mean_mean);
+    }
   }
   if (command.GetOptionWasSet("ZScoreStd")) {
     mean_stds = command.GetValueAsFloat("ZScoreStd", "value");
+    if (verbose) {
+      fprintf(stdout, "read new ZScoreStd from command line: %f\n", mean_stds);
+    }
   }
 
 
