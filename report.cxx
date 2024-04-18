@@ -636,7 +636,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
             }
           }
           char str[256];
-          snprintf(str, 256, "%.02f", a);
+          snprintf(str, 256, "%.03f", a);
           //std::stringstream stream;
           //stream << std::fixed << std::setprecision(3) << a;
           // meaning of p is: probability of randomly drawing a volume that is further away from the mean than the z-score 
