@@ -490,7 +490,7 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   }
 }
 
-void saveReport(Report *report, float mean_mean, float mean_stds) {
+void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) {
 
   std::string font_file = "Menlo.ttf";
   if (const char *env_p = std::getenv("REPORT_FONT_PATH")) {
@@ -591,10 +591,10 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
                         (sum_n + 10) * (mean_mean*mean_mean + means[i]*means[i] - 2 * mean_mean * means[i])) / (sum_n + 10 -1));
         sum_n += 10;
         mean_mean = tmp_mean_mean;
-        if (0)
+        if (verbose)
           fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
       }
-      if (0) {
+      if (verbose) {
         fprintf(stdout, "model used for z-score is: %f %f\n", mean_mean, mean_stds);
         fflush(stdout);
       }
@@ -617,6 +617,9 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
           float perc = 100.0f * 0.5f *  (1.0f + (boost::math::erf(zscore / sqrtf(2.0)))); // or, better behaving distribution
           //perc = 100*(/*0.5f * */ boost::math::erfc(- zscore / sqrtf(2.0)));
           perc = 100.0f *  (1.0f + (boost::math::erf(- abs(zscore) / sqrtf(2.0))));
+          if (verbose) {
+            fprintf(stdout, "  z-score calculation: %f (mean: %f, std: %f, physical size: %f, perc: %f)\n", zscore, mean_mean, mean_stds, a, perc);
+          }
           std::stringstream stream2;
           stream2 << std::fixed << std::setprecision(2) << zscore;
           std::stringstream stream3;

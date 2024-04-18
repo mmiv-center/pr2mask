@@ -3182,7 +3182,7 @@ int main(int argc, char *argv[]) {
         }
 
         // default values only make sense if used for the spine segmentation project
-        saveReport(report, mean_mean, mean_stds);
+        saveReport(report, mean_mean, mean_stds, verbose);
 
         // add measures to json output, make sure to keep values from previous iteration
         if (!resultJSON.contains("measures")) {
