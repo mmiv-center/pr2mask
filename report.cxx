@@ -625,7 +625,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
           //std::stringstream stream2;
           //stream2 << std::fixed << std::setprecision(2) << zscore;
           char str3[256];
-          std::stringstream stream3;
+          //std::stringstream stream3;
           if (perc < 1)
             snprintf(str3, 256, "<1");
           else {
