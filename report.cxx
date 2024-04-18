@@ -620,23 +620,27 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
           if (verbose) {
             fprintf(stdout, "  z-score calculation: %f (mean: %f, std: %f, physical size: %f, perc: %f)\n", zscore, mean_mean, mean_stds, a, perc);
           }
-          std::stringstream stream2;
-          stream2 << std::fixed << std::setprecision(2) << zscore;
+          char str2[256];
+          snprintf(str2, 256, "%.02f", zscore);
+          //std::stringstream stream2;
+          //stream2 << std::fixed << std::setprecision(2) << zscore;
+          char str3[256];
           std::stringstream stream3;
           if (perc < 1)
-            stream3 << "<1";
+            snprintf(str3, 256, "<1");
           else {
             if (perc > 99) {
-              stream3 << ">99";
+              snprintf(str3, 256, ">99");
             } else {
-              stream3 << std::fixed << std::setprecision(0) << perc;
+              snprintf(str3, 256, "%d", (int)perc);
             }
           }
-
-          std::stringstream stream;
-          stream << std::fixed << std::setprecision(3) << a;
+          char str[256];
+          snprintf(str, 256, "%.02f", a);
+          //std::stringstream stream;
+          //stream << std::fixed << std::setprecision(3) << a;
           // meaning of p is: probability of randomly drawing a volume that is further away from the mean than the z-score 
-          report->keyImageTexts[i] += std::string(": ") + stream.str() + std::string(" cm3 ") + std::string("z: ") + stream2.str() + std::string(" p: ") + stream3.str() + std::string(" %");
+          report->keyImageTexts[i] += std::string(": ") + std::string(str) + std::string(" cm3 ") + std::string("z: ") + std::string(str2) + std::string(" p: ") + std::string(str3) + std::string(" %");
         }
       }
     }
