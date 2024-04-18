@@ -640,6 +640,9 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
           //std::stringstream stream;
           //stream << std::fixed << std::setprecision(3) << a;
           // meaning of p is: probability of randomly drawing a volume that is further away from the mean than the z-score 
+          if (verbose) {
+            fprintf(stdout, "  z-score calculation: %f[\"%s\"] (mean: %f, std: %f, physical size: %f[\"%s\"], perc: %f[\"%s\"])\n", zscore, str2, mean_mean, mean_stds, a, str, perc, str3);
+          }
           report->keyImageTexts[i] += std::string(": ") + std::string(str) + std::string(" cm3 ") + std::string("z: ") + std::string(str2) + std::string(" p: ") + std::string(str3) + std::string(" %");
         }
       }
