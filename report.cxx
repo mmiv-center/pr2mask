@@ -158,6 +158,55 @@ void draw_bitmap_gen(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int 
   }
 }
 
+void addMarker(char *buffer, int posx, int posy) {
+  unsigned char *bvals = (unsigned char *)buffer;
+
+  // draw 4 lines to highlight the location
+  int line_length = 5; // in pixel
+  int offset = 7; // in pixel away from that location
+  int line_width = 3; // one pixel wide
+
+  // top bar
+  for (int j = -floor(line_width/2.0); j < floor(line_width/2.0); j++) {
+    for (int i = 0; i < line_length; i++) {
+        int idx = (posx+j) + (posy - offset - i) * image_buffer_gen_size[0];
+        if (idx < 0 || idx > image_buffer_gen_size[1]*image_buffer_gen_size[0])
+          continue;
+        bvals[idx] = 255; //(unsigned char)std::max(0.0f, std::min(current_image_max_value, 1.0f));
+    }
+  }
+  // bottom bar
+  for (int j = -floor(line_width/2.0); j < floor(line_width/2.0); j++) {
+    for (int i = 0; i < line_length; i++) {
+        int idx = (posx+j) + (posy + offset + i - 1) * image_buffer_gen_size[0];
+        if (idx < 0 || idx > image_buffer_gen_size[1]*image_buffer_gen_size[0])
+          continue;
+        bvals[idx] = 255; //(unsigned char)std::max(0.0f, std::min(current_image_max_value, 1.0f));
+    }
+  }
+
+  // left bar
+  for (int j = -floor(line_width/2.0); j < floor(line_width/2.0); j++) {
+    for (int i = 0; i < line_length; i++) {
+        int idx = (posx - offset - i) + (posy + j) * image_buffer_gen_size[0];
+        if (idx < 0 || idx > image_buffer_gen_size[1]*image_buffer_gen_size[0])
+          continue;
+        bvals[idx] = 255; //(unsigned char)std::max(0.0f, std::min(current_image_max_value, 1.0f));
+    }
+  }
+
+  // right bar
+  for (int j = -floor(line_width/2.0); j < floor(line_width/2.0); j++) {
+    for (int i = 0; i < line_length; i++) {
+        int idx = (posx + offset + i - 1) + (posy + j) * image_buffer_gen_size[0];
+        if (idx < 0 || idx > image_buffer_gen_size[1]*image_buffer_gen_size[0])
+          continue;
+        bvals[idx] = 255; //(unsigned char)std::max(0.0f, std::min(current_image_max_value, 1.0f));
+    }
+  }
+
+
+}
 
 // generic method using dynamic array for image_buffer_gen
 void addToReportGen(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
@@ -484,11 +533,6 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
     return;
   }
 
-  // We would like to re-order the different regions, right now the label does not correspond with the 
-  // number in the report.
-  std::map<int, int> orderOfRegions; // For the given number of regions we expect a keyImageText to map to a specific
-                                     // label.
-
   // add the key image
   if (report->keyImage) {
 
@@ -564,8 +608,9 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
       for (int j = 0; j < report->measures.size(); j++) {
         if ( atoi(report->keyImageTexts[i].c_str())-1 == j ) {
           // remember what keyImageText is what label
-          orderOfRegions.insert(std::pair<int, int>(i, j));
+          // orderOfRegions.insert(std::pair<int, int>(i, j));
 
+          // TODO: measures needs to be organized like the text after a resorting
           float a = atof(report->measures[j].find("physical_size")->second.c_str()) / 1000.0;
           // z-score is
           float zscore = (a - mean_mean) / mean_stds;
@@ -594,11 +639,11 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
     }
     // debug orderOfRegions
     if (0) {
-      std::map<int, int>::iterator it;
-      for (it = orderOfRegions.begin(); it != orderOfRegions.end(); it++) {
-        fprintf(stdout, "Key: %d, Value: %d\n", it->first, it->second);
-        fflush(stdout);
-      }
+      //std::map<int, int>::iterator it;
+      //for (it = orderOfRegions.begin(); it != orderOfRegions.end(); it++) {
+      //  fprintf(stdout, "Key: %d, Value: %d\n", it->first, it->second);
+      //  fflush(stdout);
+      //}
     }
 
     // use the generic method to draw text using image_buffer_gen
@@ -617,8 +662,11 @@ void saveReport(Report *report, float mean_mean, float mean_stds) {
         std::string piece1 = report->keyImageTexts[k].substr(0, pos);
         std::string piece2 = report->keyImageTexts[k].substr(pos);
         //fprintf(stdout, "string: %s <-> %s", piece1.c_str(), piece2.c_str());
-        addToReportGen(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
-        addToReportGen(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35, report->keyImagePositions[k][1]-50, 0);  
+        // add a marker for the exact location, need to know how large the character is...
+        addMarker(kbuffer, report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
+
+        addToReportGen(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5 + 20, report->keyImagePositions[k][1]-30, 0);  
+        addToReportGen(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35 + 20, report->keyImagePositions[k][1]-50, 0);  
       } else {
         addToReportGen(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
       }

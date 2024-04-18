@@ -93,6 +93,7 @@ struct generateImageReturn
      CImageType::Pointer keyImage;
      std::vector< std::array<int, 2> > pos;
      std::vector< std::string > text;
+     std::vector<int> roi_order;
 };
 
 // generate a key image based on an input image mask and the ground truth image
@@ -219,7 +220,23 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
   blue_channel->SetSpacing(image->GetSpacing());
   blue_channel->SetDirection(image->GetDirection());
 
-  for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); n++) {
+  std::vector<std::pair<int,int>> sizeByROI;
+  for (unsigned int roi = 0; roi < labelMap->GetNumberOfLabelObjects(); ++roi) {
+    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(roi); // the label number is the connected component number - not the one label as mask
+    sizeByROI.push_back(std::make_pair(labelObject->GetNumberOfPixels(), roi));
+  }
+  std::sort(sizeByROI.begin(), sizeByROI.end(), [](auto &left, auto &right) {
+    return left.first > right.first; // largest roi first
+  });
+  // add info as roi_order for later
+  //for (int roi_idx = 0; roi_idx < labelMap->GetNumberOfLabelObjects(); ++roi_idx) {
+  //  returns.roi_order.push_back(sizeByROI[roi_idx].second);
+  //}
+
+  // here we need to compute using the label order, later when we look at the results we will use the returned roi_order?
+  // but we don't need both!!
+  for (unsigned int n_idx = 0; n_idx < labelMap->GetNumberOfLabelObjects(); n_idx++) {
+    unsigned int n = sizeByROI[n_idx].second;
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
     int label = labelObject->GetLabel(); // it might be that all regions have the same label and only n is a good choice for the color
 
@@ -277,15 +294,6 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
 
   float f = 0.4; // weight of the underlay, 0.1 is mostly mask visible
 
-  std::vector<std::pair<int,int>> sizeByROI;
-  for (unsigned int roi = 0; roi < labelMap->GetNumberOfLabelObjects(); ++roi) {
-    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(roi); // the label number is the connected component number - not the one label as mask
-    sizeByROI.push_back(std::make_pair(labelObject->GetNumberOfPixels(), roi));
-  }
-  std::sort(sizeByROI.begin(), sizeByROI.end(), [](auto &left, auto &right) {
-    return left.first < right.first;
-  });
-
   // TODO: sort roi's by size and start with the largest region of interest (top of the image)
   for (unsigned int roi_idx = 0; roi_idx < sizeByROI.size(); ++roi_idx) {
     unsigned int roi = sizeByROI[roi_idx].second;
@@ -295,7 +303,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
     // do this for the left side
     int targetLocationStart[2];
     targetLocationStart[0] = 0;
-    targetLocationStart[1] = roi * base_image_sizeLH;
+    targetLocationStart[1] = roi_idx * base_image_sizeLH;
     int targetLocationEnd[2];
     targetLocationEnd[0] = targetLocationStart[0] + base_image_sizeLW;
     targetLocationEnd[1] = targetLocationStart[1] + base_image_sizeLH;
@@ -460,7 +468,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
     { // Right top image (flip 180)
 
       targetLocationStart[0] = base_image_sizeLW;
-      targetLocationStart[1] = roi * base_image_sizeLH;
+      targetLocationStart[1] = roi_idx * base_image_sizeLH;
       targetLocationEnd[0] = targetLocationStart[0] + base_image_sizeRW;
       targetLocationEnd[1] = targetLocationStart[1] + base_image_sizeRH;
 
@@ -564,7 +572,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
     { // Right bottom image
 
       targetLocationStart[0] = base_image_sizeLW;
-      targetLocationStart[1] = roi * base_image_sizeLH + base_image_sizeRH;
+      targetLocationStart[1] = roi_idx * base_image_sizeLH + base_image_sizeRH;
       targetLocationEnd[0] = targetLocationStart[0] + base_image_sizeRW;
       targetLocationEnd[1] = targetLocationStart[1] + base_image_sizeRH;
 
@@ -710,6 +718,8 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   //std::map< std::string, int > coord2Label;
 
   for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
+    // these are all in order
+    returns.roi_order.push_back(n);
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
     int label = labelObject->GetLabel();
 
@@ -2066,18 +2076,30 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   report->keyImage = rets.keyImage;
   report->keyImagePositions = rets.pos;
   report->keyImageTexts = rets.text;
+
   // need to add some text to this image, number and volume of this location
+  // make summary object large enough for all rois
+  for (int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
+    if (report->summary.size() < n+1)
+      report->summary.push_back(std::vector<std::string>{report->summary[0][0]});
+    // report->measures
+    if (report->measures.size() < n+1) {
+      std::map<std::string, std::string> *meas = new std::map<std::string, std::string>();
+      report->measures.push_back(*meas);
+    }
+  }
 
   // do the summary per label object
-  for (unsigned int n = 0; n < labelMap->GetNumberOfLabelObjects(); ++n) {
-    if (report->summary.size() < n+1)
-      report->summary.push_back(std::vector<std::string>{report->summary[0][0]}); // TODO: add an empty line here, or get the first line of the previous/first summary
+  for (unsigned int n_idx = 0; n_idx < labelMap->GetNumberOfLabelObjects(); ++n_idx) {
+    unsigned int n = n_idx; // report->roi_order[n_idx];
+    //if (report->summary.size() < n_idx+1)
+    //  report->summary.push_back(std::vector<std::string>{report->summary[0][0]}); // TODO: add an empty line here, or get the first line of the previous/first summary
     ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
     if (verbose) {
       fprintf(stdout, "processing label %d\n", labelObject->GetLabel()); fflush(stdout);
     }
 
-    std::map<std::string, std::string> *meas = new std::map<std::string, std::string>();
+    std::map<std::string, std::string> *meas = &(report->measures[n_idx]); // new std::map<std::string, std::string>();
 
     buf.str("");
     buf << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
@@ -2353,7 +2375,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
       if (row.str().size() > 4)
         report->summary[n].push_back(row.str());
 
-      report->measures.push_back(*meas);
+      //report->measures.push_back(*meas);
     }
   }
   if (verbose) 
