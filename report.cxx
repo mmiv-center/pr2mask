@@ -212,6 +212,11 @@ void addMarker(char *buffer, int posx, int posy) {
 void addToReportGen(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
   FT_Library library;
 
+  bool verbose = 1;
+  if (verbose) {
+    fprintf(stdout, "  addToReportGen: \"%s\"\n", stext.c_str());
+  }
+
   double angle;
   int target_height;
   int n, num_chars;
@@ -303,8 +308,10 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
     FT_Set_Transform(face, &matrix, &pen);
 
     error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-    if (error)
+    if (error) {
+      fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not load character: '%c'\n", text[n]);
       continue; /* ignore errors */
+    }
 
     /* now, draw to our target surface (convert position) draws into image_buffer */
     draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top);
@@ -440,9 +447,10 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
     FT_Set_Transform(face, &matrix, &pen);
 
     error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-    if (error)
+    if (error) {
+      fprintf(stdout, "\033[0;31mError\033[0m: Could not load character: '%c'\n", text[n]);
       continue; /* ignore errors */
-
+    }
     /* now, draw to our target surface (convert position) draws into image_buffer */
     draw_bitmap(&slot->bitmap, WIDTH, HEIGHT, slot->bitmap_left, target_height - slot->bitmap_top);
 
@@ -617,9 +625,8 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
           float perc = 100.0f * 0.5f *  (1.0f + (boost::math::erf(zscore / sqrtf(2.0)))); // or, better behaving distribution
           //perc = 100*(/*0.5f * */ boost::math::erfc(- zscore / sqrtf(2.0)));
           perc = 100.0f *  (1.0f + (boost::math::erf(- abs(zscore) / sqrtf(2.0))));
-          if (verbose) {
-            fprintf(stdout, "  z-score calculation: %f (mean: %f, std: %f, physical size: %f, perc: %f)\n", zscore, mean_mean, mean_stds, a, perc);
-          }
+
+          // create the message string
           char str2[256];
           snprintf(str2, 256, "%.02f", zscore);
           //std::stringstream stream2;
@@ -640,10 +647,10 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
           //std::stringstream stream;
           //stream << std::fixed << std::setprecision(3) << a;
           // meaning of p is: probability of randomly drawing a volume that is further away from the mean than the z-score 
-          if (verbose) {
-            fprintf(stdout, "  z-score calculation: %f[\"%s\"] (mean: %f, std: %f, physical size: %f[\"%s\"], perc: %f[\"%s\"])\n", zscore, str2, mean_mean, mean_stds, a, str, perc, str3);
-          }
           report->keyImageTexts[i] += std::string(": ") + std::string(str) + std::string(" cm3 ") + std::string("z: ") + std::string(str2) + std::string(" p: ") + std::string(str3) + std::string(" %");
+          if (verbose) {
+            fprintf(stdout, "  overlay: \"%s\"\n", report->keyImageTexts[i].c_str());
+          }
         }
       }
     }

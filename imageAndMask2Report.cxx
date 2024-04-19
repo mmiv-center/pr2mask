@@ -188,9 +188,9 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
       break;
     }
   }
-  if (verbose) {
-    fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
-  }
+  //if (verbose) {
+  //  fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
+  //}
 
   // we need three 3D images for the red green and blue channel
   // so we can blurr them before using them in the output image
@@ -913,9 +913,9 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
       break;
     }
   }
-  if (verbose) {
-    fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
-  }
+  //if (verbose) {
+  //  fprintf(stdout, "calculated best threshold low: %f, high: %f\n", t1, t2);
+  //}
 
   // we need three 3D images for the red green and blue channel
   // so we can blurr them before using them in the output image
@@ -1639,8 +1639,8 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   if (!writer.Write()) {
     return;
   }
-  if (verbose)
-    fprintf(stdout, "done with writeSecondaryCapture...\n");
+  //if (verbose)
+  //  fprintf(stdout, "done with writeSecondaryCapture...\n");
   return;
 }
 
