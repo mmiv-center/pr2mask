@@ -2464,7 +2464,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  verbose = false;
+  verbose = true; //print out everything
   if (command.GetOptionWasSet("Verbose"))
     verbose = true;
 
@@ -2482,7 +2482,9 @@ int main(int argc, char *argv[]) {
       fprintf(stdout, "read new ZScoreStd from command line: %f\n", mean_stds);
     }
   }
-
+  if (verbose) {
+    fprintf(stdout, "USE THESE: %f %f\n", mean_mean, mean_stds);
+  }
 
   float brightness_contrast_ll = 0.01;
   float brightness_contrast_ul = 0.999;
