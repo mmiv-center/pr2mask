@@ -2515,7 +2515,6 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "create report with brightness/contrast settings %.03f %.03f\n", brightness_contrast_ll, brightness_contrast_ul);
   }
 
-
   bool isMosaic = false;
   if (command.GetOptionWasSet("ReportType")) {
     std::string bla = command.GetValueAsString("ReportType", "value");

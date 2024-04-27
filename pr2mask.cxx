@@ -1596,7 +1596,6 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("BrightnessContrastUL", "brightness-contrast-ul");
   command.AddOptionField("BrightnessContrastUL", "value", MetaCommand::FLOAT, false);
 
-
   if (!command.Parse(argc, argv)) {
     return 1;
   }
@@ -1631,7 +1630,7 @@ int main(int argc, char *argv[]) {
   brightness_contrast_ll = brightnesscontrast_ll;
   brightness_contrast_ul = brightnesscontrast_ul;
   if (verbose) {
-    fprintf(stdout, "create report with brightness/contrast settings %.03f %.03f\n", brightness_contrast_ll, brightness_contrast_ul);
+    fprintf(stdout, "create report with brightness/contrast setting %.03f %.03f\n", brightness_contrast_ll, brightness_contrast_ul);
   }
 
   bool biomarker = true;
