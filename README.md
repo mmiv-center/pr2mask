@@ -1,4 +1,25 @@
-# Presentation state objects to mask volumes
+# Integration of semantic segmentations into clinical workflows
+
+In semantic segmentation we assign a name like 'tumor' to a region of interest in an image or volume. Individual pixel values can be highlighted in this way and the resulting images allow physicians to evaluate such data. There are several ways to present such data inside clinical systems. All of them are stored as DICOM objects in the archive or VNA.
+
+- As a black and white mask volume: Creating such mask volumes (label fields) is discorraged because they require image fusion and overlays with real data for effective evaluation. They are required as training data for artificial neural networks and they are also required if biomarkers need to be derived from the images.
+- Fused image series: Original images as color secondary captures that highlight the mask as a tinted overlay on the original data. Fused images allow for an easy (visual) evaluation of segmentation accuracy. Because they use alpha-blending image intensity inside the mask is also visible. Fused image series cannot easily be used for measurements as they are not coded as original and image viewers might have some limitations if such data is displayed.
+- Structured reports: As a DICOM object they keep numeric values with units in the picture archive. Instead of textual images burned into secondary captures all numeric values are stored in a structured way. Such reports can be extracted again from PACS and processed automatically. Structured reports might not in themselves contain image data and thus might not appear in the image archive next to true image objects. The archive will be able to save them. Users can export them again to gain access to structured information.
+- Report images: A report blends textual information with key images or derived images similar to a fused image series. Stored as secondary captures these images show up in the image archive and can contain views of regions of interest together with overlays of volume measures or other derived biomarkers. Information presented in a report image are not structured and need to be interpreted by a human/vision A.I.
+
+This package creates all of the above objects to allow for:
+
+- training and finetuning of new A.I. models (mask volumes)
+- visual assessment of masks overlayed on primary images (fused image series)
+- machine readable biomarker repository (structured reports)
+- visual presentation of key derived measures such as tumor volumes (report images)
+
+## Design
+
+Integration of A.I. into a clinical workflow requires support for two steps. i) Creation of training data for image A.I. models and ii) translation of image predictions from trained A.I. models into information suitable for visual assessment and automated data processing.
+
+
+## Presentation state objects to mask volumes
 
 On PACS systems polygonal traces can be stored as DICOM Presentation State objects. In order to get such an object back from the PACS it is not sufficient to 'export' the data from the user interface. Export functionality might not produce a Presentation State object DICOM file. Instead use findscu/movescu to get a copy of the native PACS data.
 
