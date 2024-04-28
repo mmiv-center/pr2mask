@@ -20,7 +20,7 @@ Integration of A.I. into a clinical workflow requires support for two steps. i) 
 
 ### Creation of training data for image A.I. models
 
-To support the creation of training data we provide a module for creating segmentation mask from presentation state objects called <i>pr2mask</i>. The presentation state DICOM files (modality PR) contains the polygon vertices for outlines created inside the PACS. All polygons for an image are converted into a mask slice (inside 1, outside value 0) in DICOM format.
+To support the creation of training data we provide a module for creating segmentation mask from presentation state objects called <i>pr2mask</i>. The presentation state DICOM files (modality PS) contains the polygon vertices for outlines created inside the PACS. All polygons for an image are converted into a mask slice (inside 1, outside value 0) in DICOM format.
 
 If mask slices created by pr2mask are not done every single slice and the segmentation leaves gaps the program <i>MorphologicalContourInterpolation</i> can fill in these gaps and create a volumetric segmentation mask. The module works on the mask DICOM files created by pr2mask and returns a new DICOM mask series where missing slices are filled in. With an option 'FineTuning' these masks can be adjusted to add more detail based on image contrast. This reduces manual segmentation time as a) not all slices need to be manually segmented and b) the polygon segmentations do not need to be that detailed.
 
@@ -38,6 +38,14 @@ PSg.1.2.752.24.7.2440279901.62644.0.481844.0.1664872093
 ```
 
 The pr2mask tool can be used to convert this list of files into a new output directory:
+
+```bash
+# Create mask from presentations state objects using fixed (-u) ids.
+# Option '--nobiomarker' switches off the computation of texture and
+# shape measures for the regions of interest to speed up computation.
+./pr2mask data /tmp/bla -u --verbose --nobiomarker
+```
+
 
 ```bash
 output
@@ -131,8 +139,15 @@ If the program is used continuously converting new polygonal outlines into masks
 
 Semantic segmentation procedures may result in individual masks (black and white) that match with an individual input image series. The <i>imageAndMask2Report</i> program accepts a DICOM image series with a matching DICOM mask series (as created by pr2mask).
 
-All processing results are stored in an output folder with the following structure:
+```bash
+# Generate outputs from image and mask DICOM in /tmp/blarg folder
+# Option '-u' ensures that new UIDs are derived from input
+# UIDs. This ensures that we can submit such objects several times
+# to PACS and they will replace each other (overwrite mode).
+./imageAndMask2Report data/input data/mask /tmp/blarg -u
+```
 
+All processing results are stored in an output folder with the following structure:
 
 ```bash
 .
@@ -150,6 +165,13 @@ All processing results are stored in an output folder with the following structu
     └── 17c7b0b12cfae8a736509d963df1389b7e0432b0daadac1939a277b10b968.1_0.dcm
 ```
 
+The structured values for biomarker recovery are contained in the json formatted file. In order to convert them for PACS use
+
+```bash
+./json2SR /tmp/blarg/17c7b0b12cf_17c7b0b12cfae8a73650.1.json
+```
+
+This will create a new DICOM object in the /tmp/blarg/ folder as a structured report.
 
 
 ## Build these modules
@@ -170,7 +192,7 @@ make
 
 If you want to build in macos you might need to specify the location of qt5 with
 
-```
+```bash
 cmake . -DCMAKE_PREFIX_PATH=/opt/homebrew/Cellar/qt@5/5.15.10
 ```
 
