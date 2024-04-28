@@ -10,7 +10,8 @@ RUN apt-get update -qq && apt-get install -yq build-essential \
 RUN cd /tmp/ \
     && wget https://github.com/InsightSoftwareConsortium/ITK/releases/download/v5.3.0/InsightToolkit-5.3.0.tar.gz \
     && cd /opt/ && tar xzvf /tmp/InsightToolkit-5.3.0.tar.gz && cd /opt/InsightToolkit-5.3.0 \
-    && mkdir bin && cd bin && cmake .. && make -j 4
+    && mkdir bin && cd bin && cmake -DModule_MorphologicalContourInterpolation:BOOL=ON .. && make -j 4 \
+    && rm /tmp/InsightToolkit-5.3.0.tar.gz
 
 # install dcmtk
 RUN cd / \
