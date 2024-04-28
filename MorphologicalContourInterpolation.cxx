@@ -38,7 +38,7 @@ using MaskImageType = itk::Image<unsigned short, 3>;
 
 // If fine_tune_mask is for example == 1 we will shrink and grow the mask once each and 
 // add/remove any voxel with large image gradients.
-MaskImageType::Pointer fineTune(MaskImageType::Pointer mask, std::string image_path, int fine_tune_mask, int verbose) {
+MaskImageType::Pointer fineTune(MaskImageType::Pointer mask, std::string image_path, int fine_tune_mask, int N, int verbose) {
 
   // so the rules of the game are that we use the smallest stencil of 7 sampling points
   // We will want the center point to be inside the mask and at least one other point on the background.
@@ -133,7 +133,7 @@ MaskImageType::Pointer fineTune(MaskImageType::Pointer mask, std::string image_p
   itk::GradientAnisotropicDiffusionImageFilter< ImageType3D,
                                                 InternalImageType >;
   DiffusionFilterType::Pointer diffusion = DiffusionFilterType::New();
-  diffusion->SetNumberOfIterations( 10 );
+  diffusion->SetNumberOfIterations( N );
   diffusion->SetTimeStep(0.05);
   diffusion->SetConductanceParameter( 2.0 );
 
@@ -147,7 +147,7 @@ MaskImageType::Pointer fineTune(MaskImageType::Pointer mask, std::string image_p
   laplacianSegmentation->SetPropagationScaling( 1.0 );
 
   laplacianSegmentation->SetMaximumRMSError( 0.002 );
-  laplacianSegmentation->SetNumberOfIterations( 10 );
+  laplacianSegmentation->SetNumberOfIterations( N );
 
   laplacianSegmentation->SetIsoSurfaceValue( 0.5 );
 
@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
   command.SetOptionLongTag("MaxNumberOfThreads", "maxnumberofthreads");
   command.AddOptionField("MaxNumberOfThreads", "maxnumberofthreads", MetaCommand::INT, false);
 
-  command.SetOption("FineTuneMask", "f", false, "Adjust the mask to pixel of hightest gradient in a region N pixel distant from polygon mask (N=1). This option requires that the image series is also provided (option -i).");
+  command.SetOption("FineTuneMask", "f", false, "Adjust the mask (N=10). This option requires that the image series is also provided (option -i).");
   command.SetOptionLongTag("FineTuneMask", "fine-tune-mask");
   command.AddOptionField("FineTuneMask", "value", MetaCommand::INT, false);
 
@@ -479,7 +479,7 @@ int main(int argc, char* argv[]) {
       // read the image series and see if it matches with the mask volume.
       MaskImageType::Pointer fine_tuned_mask;
       if (fine_tune_mask > 0) {
-        fine_tuned_mask = fineTune(pasteFilter->GetOutput(), image_path, fine_tune_mask, verbose);
+        fine_tuned_mask = fineTune(pasteFilter->GetOutput(), image_path, fine_tune_mask, fine_tune_mask, verbose);
       }
 
       // Instead of writing a single file, we want to write out a new DICOM series
