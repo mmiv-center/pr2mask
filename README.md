@@ -173,6 +173,27 @@ The structured values for biomarker recovery are contained in the json formatted
 
 This will create a new DICOM object in the /tmp/blarg/ folder as a structured report.
 
+### Use partial polygonal outlines for 3D segmentation
+
+The morphological contour interpolation algorithm allows us to create volume filling segmentations from a few polygonal regions (e.g. done every two slices). Create the partial segmentional mask volume first. Use the '-o' option to prevent the expensive computation of biomarkers, the '-u' option will prevent random series and image instance UIDs from being created, e.g. repeating the process will create stable UIDs based on the input. Use MorphologicalContourInterpolation second pointing it to the generated mask volume from pr2mask.
+
+
+```bash
+./pr2mask data/pr2mask_test_liver /tmp/bla -u -o
+./MorphologicalContourInterpolation /tmp/bla/labels/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde42.1 \
+				    /tmp/output \
+				    --image-series /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 \
+				    -u
+```
+
+As a last step we can use the generated mask to create a report that includes volume measures using imageAndMask2Report.
+
+```bash
+./imageAndMask2Report /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ -u
+```
+
+
+
 
 ## Build these modules
 
@@ -195,6 +216,16 @@ If you want to build in macos you might need to specify the location of qt5 with
 ```bash
 cmake . -DCMAKE_PREFIX_PATH=/opt/homebrew/Cellar/qt@5/5.15.10
 ```
+
+If you update your build system and you are using a source code version of IKT you might need to rebuild IKT (5.3) with
+
+```
+cd InsightToolkit
+mkdir bin; cd bin
+cmake -DModule_MorphologicalContourInterpolation:BOOL=ON ../
+```
+
+Delete the CMakeFiles folder and makefile plus CMakeCache.txt.
 
 ## Debugging
 

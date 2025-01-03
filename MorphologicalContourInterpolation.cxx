@@ -199,7 +199,8 @@ int main(int argc, char* argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  std::string versionString = std::string("0.0.1.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  std::string versionString = std::string("0.0.2.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  versionString.replace(versionString.find(".."), 2, ".");
   command.SetVersion(versionString.c_str());
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("MorphologicalContourInterpolation: Creates an interpolated volume label from individual slice segmentations.");
@@ -231,6 +232,14 @@ int main(int argc, char* argv[]) {
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
+
+  command.SetOption("Version", "V", false, "Print version information.");
+  command.SetOptionLongTag("Version", "version");
+
+  if (argc == 2 && std::string(argv[1]) == std::string("--version")) {
+    fprintf(stdout, "Version: %s\n", versionString.c_str());
+    return 0;
+  }
 
   if (!command.Parse(argc, argv)) {
     return 1;
