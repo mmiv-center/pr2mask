@@ -76,6 +76,12 @@ int main(int argc, char *argv[]) {
 
     // read in the config file as json
     for (int i = 0; i < input.size(); i++) {
+        // check if this file actually exists
+        if (!std::filesystem::exists(input[i])) {
+            fprintf(stderr, "Error: input file %s does not exist\n", input[i].c_str());
+            exit(-1);
+        }
+
         std::ifstream f(input[i]);
         nlohmann::json report = nlohmann::json::parse(f);
 

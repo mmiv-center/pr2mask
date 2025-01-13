@@ -186,13 +186,13 @@ The morphological contour interpolation algorithm allows us to create volume fil
 				    -u
 ```
 
-As a last step we can use the generated mask to create a report that includes volume measures using imageAndMask2Report.
+As a last step we can use the generated mask and the original image series to create a report that includes volume measures using imageAndMask2Report.
 
 ```bash
-./imageAndMask2Report /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ -u
+./imageAndMask2Report /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg -u -r mosaic
 ```
 
-
+The output folder /tmp/blarg/ will contain the output in multiple formats
 
 
 ## Build these modules
