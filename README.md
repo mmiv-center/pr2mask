@@ -197,6 +197,8 @@ The output folder /tmp/blarg/ will contain the output in multiple formats
 
 ## Build these modules
 
+This project depends on the boost, libzip and freetype libraries. Install these before starting to build a non-docker version of this program. 
+
 The easiest way to create the executable is by following the instructions in the Dockerfile:
 
 ```bash
