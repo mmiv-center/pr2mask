@@ -200,7 +200,8 @@ int main(int argc, char* argv[]) {
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
   std::string versionString = std::string("0.0.2.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
-  versionString.replace(versionString.find(".."), 2, ".");
+  if (versionString.find("..") != std::string::npos)
+    versionString.replace(versionString.find(".."), 2, ".");
   command.SetVersion(versionString.c_str());
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("MorphologicalContourInterpolation: Creates an interpolated volume label from individual slice segmentations.");
