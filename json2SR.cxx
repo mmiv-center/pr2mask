@@ -8,6 +8,7 @@
 
 #include <boost/date_time.hpp>
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 #include "json.hpp"
 #include <string>
 
@@ -77,7 +78,7 @@ int main(int argc, char *argv[]) {
     // read in the config file as json
     for (int i = 0; i < input.size(); i++) {
         // check if this file actually exists
-        if (!std::filesystem::exists(input[i])) {
+        if (!boost::filesystem::exists(input[i])) {
             fprintf(stderr, "Error: input file %s does not exist\n", input[i].c_str());
             exit(-1);
         }
