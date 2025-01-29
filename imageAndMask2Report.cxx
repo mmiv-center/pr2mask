@@ -2518,7 +2518,8 @@ int main(int argc, char *argv[]) {
   bool isMosaic = false;
   if (command.GetOptionWasSet("ReportType")) {
     std::string bla = command.GetValueAsString("ReportType", "value");
-    if (command.GetValueAsString("ReportType", "value") == std::string("mosaic")) {
+    bla.erase(remove( bla.begin(), bla.end(), '\"' ), bla.end());
+    if (bla == std::string("mosaic")) {
       if (verbose)
         fprintf(stdout, "Info: Selected mosaic report type\n");
       isMosaic = true;
