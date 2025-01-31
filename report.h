@@ -34,6 +34,7 @@ typedef struct {
   std::string key_fact;
   std::string key_unit;
   std::string InstitutionName;
+  std::string TitleText;
   float BrightnessContrastLL;
   float BrightnessContrastUL;
   std::string ReportType;
