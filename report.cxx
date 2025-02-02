@@ -774,6 +774,9 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
 
         addToReportGen(kbuffer, font_file, fontSize, piece1, report->keyImagePositions[k][0]-(5.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
         addToReportGen(kbuffer, font_file, fontSize/2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(50.0/9.0*fontSize), 0);  
+
+        // un-changeable text "Not for clinical use"
+        addToReportGen(kbuffer, font_file, fontSize/2, "Not for clinical use", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
       } else {
         addToReportGen(kbuffer, font_file, fontSize/2, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
       }
