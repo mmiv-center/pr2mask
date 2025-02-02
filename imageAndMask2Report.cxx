@@ -114,7 +114,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
   }
 
   // lets use the base image resolution of
-  int base_image_sizeLW = 512; // we will put an axial square image next to coronal and sagittal on top of each other
+  int base_image_sizeLW = resolution[0]/1.618; // we will put an axial square image next to coronal and sagittal on top of each other
   int base_image_sizeLH = base_image_sizeLW;
   int base_image_sizeRW = floor(base_image_sizeLW / 1.618);
   int base_image_sizeRH = floor(base_image_sizeLH / 2.0);
@@ -2069,7 +2069,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   // compute a key image we can use in the report
   generateImageReturn rets;
   if (isMosaic) {
-    rets = generateKeyImageMosaic(image, labelMap, std::vector<int>{512,512}, report->BrightnessContrastLL, report->BrightnessContrastUL);
+    rets = generateKeyImageMosaic(image, labelMap, std::vector<int>{2048,2048}, report->BrightnessContrastLL, report->BrightnessContrastUL);
   } else {
     rets = generateKeyImage(image, labelMap, std::vector<int>{512,512}, report->BrightnessContrastLL, report->BrightnessContrastUL);
   }
@@ -2399,8 +2399,26 @@ static inline std::string rtrim_copy(std::string s) {
   rtrim(s);
   return s;
 }
+
+  // test
+  int print_mb(const char* ptr) {
+      std::mbtowc(nullptr, 0, 0); // reset the conversion state
+      const char* end = ptr + std::strlen(ptr);
+      int ret{};
+      for (wchar_t wc; (ret = std::mbtowc(&wc, ptr, end - ptr)) > 0; ptr += ret)
+          std::wcout << wc;
+      std::wcout << '\n';
+      return ret;
+  }
+
 int main(int argc, char *argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
+
+
+  //std::setlocale(LC_ALL, "en_US.utf8");
+  //const char* s = argv[2];
+  //print_mb(s);
+
 
   boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
   resultJSON["run_date_time"] = to_simple_string(timeLocal);
@@ -2430,6 +2448,7 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("Info", "info");
   command.AddOptionField("Info", "info", MetaCommand::STRING, false);
 
+  // such a text can be in multi-byte / wide-char format, translate first before use
   command.SetOption("TitleText", "t", false, "Specify the title text on the report.");
   command.SetOptionLongTag("TitleText", "title");
   command.AddOptionField("TitleText", "title", MetaCommand::STRING, false);
@@ -2454,6 +2473,9 @@ int main(int argc, char *argv[]) {
   command.SetOption("BrightnessContrastUL", "b", false, "Set threshold for brightness / contrast based on cummulative histogram upper limit (percentage bright pixel 0.999).");
   command.SetOptionLongTag("BrightnessContrastUL", "brightness-contrast-ul");
   command.AddOptionField("BrightnessContrastUL", "value", MetaCommand::FLOAT, false);
+
+  // use the lognormal distribution as an alternative to the normal distribution
+  // for this we can use boost/math/distributions/lognormal.hpp together with the location and scale of the distribution
 
   // float mean_mean = 23.31783, float mean_stds = 4.539313
   command.SetOption("ZScoreMean", "z", false, "Set z-scores mean value (default: 23.31783).");
@@ -2553,8 +2575,15 @@ int main(int argc, char *argv[]) {
   if (command.GetOptionWasSet("MaskSeriesName"))
     maskSeriesIdentifierFlag = true;
 
+
   std::string infoMessage = command.GetValueAsString("Info", "info");
   std::string titleText = command.GetValueAsString("TitleText", "title");
+
+  print_mb(titleText.c_str());
+
+  //std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+  //std::wstring wTitleText = converter.from_bytes(titleText);
+
 
   std::string seriesName = command.GetValueAsString("SeriesName", "seriesname");
   std::string maskSeriesName = command.GetValueAsString("MaskSeriesName", "maskseriesname");

@@ -20,6 +20,7 @@
 #include <gdcmFile.h>
 #include <gdcmImage.h>
 #include <math.h>
+#include <codecvt>
 
 #include <boost/date_time.hpp>
 
@@ -30,8 +31,8 @@
 #define HEIGHT 2400
 
 unsigned char image_buffer[HEIGHT][WIDTH];
-unsigned char image_buffer512[512][512];
-unsigned char image_buffer828[512][828];
+//unsigned char image_buffer512[512][512];
+//unsigned char image_buffer828[512][828];
 unsigned int image_buffer_gen_size[2] = {0,0};
 unsigned char **image_buffer_gen = NULL;
 
@@ -82,6 +83,20 @@ Report *getDefaultReportStruct() {
   return report;
 }
 
+// provide string as str.c_str()
+// return if conversion was successful
+int stdstring2stdwstring(std::wstring *wstr, const char* ptr) {
+    wstr->clear();
+    std::mbtowc(nullptr, 0, 0); // reset the conversion state
+    const char* end = ptr + std::strlen(ptr);
+    int ret{};
+    for (wchar_t wc; (ret = std::mbtowc(&wc, ptr, end - ptr)) > 0; ptr += ret) {
+        //std::wcout << wc;
+        wstr->push_back(wc);
+    }
+    std::wcout << '\n';
+    return ret;
+}
 
 // draws into image_buffer
 void draw_bitmap(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int y) {
@@ -159,13 +174,13 @@ void draw_bitmap_gen(FT_Bitmap *bitmap, int width, int height, FT_Int x, FT_Int 
   }
 }
 
-void addMarker(char *buffer, int posx, int posy) {
+void addMarker(char *buffer, int posx, int posy, int fontSize) {
   unsigned char *bvals = (unsigned char *)buffer;
 
-  // draw 4 lines to highlight the location
-  int line_length = 5; // in pixel
-  int offset = 7; // in pixel away from that location
-  int line_width = 3; // one pixel wide
+  // draw 4 lines to highlight the location (fontSize was 9 before)
+  int line_length = fontSize/2.0; // in pixel
+  int offset = 7.0/9.0*fontSize; // in pixel away from that location
+  int line_width = 3.0/9.0*fontSize; // one pixel wide
 
   // top bar
   for (int j = -floor(line_width/2.0); j < floor(line_width/2.0); j++) {
@@ -209,13 +224,39 @@ void addMarker(char *buffer, int posx, int posy) {
 
 }
 
+// return one character at position num in wc2
+int get_mb(wchar_t *wc2, const char* ptr, int num) {
+    std::mbtowc(nullptr, 0, 0); // reset the conversion state
+    const char* end = ptr + std::strlen(ptr);
+    int ret{};
+    int n = 0;
+    for (wchar_t wc; (ret = std::mbtowc(&wc, ptr, end - ptr)) > 0; ptr += ret) {
+        if (n++ == num) {
+           *wc2 = wc;
+           break; 
+        }
+    }
+    return ret;
+}
+
 // generic method using dynamic array for image_buffer_gen
-void addToReportGen(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
+void addToReportGen(char *buffer, std::string font_file, int font_size, std::string sstext, int posx, int posy, float radiants) {
   FT_Library library;
+
+
+  //std::wstring stext;
+
+  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> convert;
+  std::wstring stext = convert.from_bytes(sstext);
+
+  //if (!stdstring2stdwstring(&stext, sstext.c_str())) {
+  //  fprintf(stderr, "Error converting string to wstring\n");
+  //  return;
+  //}
 
   bool verbose = 1;
   if (verbose) {
-    fprintf(stdout, "  addToReportGen: \"%s\"\n", stext.c_str());
+    fprintf(stdout, "  addToReportGen: \"%s\"\n", sstext.c_str());
   }
 
   double angle;
@@ -299,28 +340,67 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   pen.x = (1 * 64);
   pen.y = (target_height - 40) * 64; // the 60 here is related to the font size!
 
-  const char *text = stext.c_str();
+
+
+
+/*  const char *text = sstext.c_str();
   for (n = 0; n < num_chars; n++) {
     if (text[n] == '\n') {
       continue; // ignore newlines
     }
 
-    /* set transformation */
     FT_Set_Transform(face, &matrix, &pen);
 
-    error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+    error = FT_Load_Char(face, stext[n], FT_LOAD_RENDER);
     if (error) {
       fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not load character: '%c'\n", text[n]);
-      continue; /* ignore errors */
+      continue;
     }
 
-    /* now, draw to our target surface (convert position) draws into image_buffer */
     draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top);
 
-    /* increment pen position */
     pen.x += slot->advance.x;
     pen.y += slot->advance.y;
-  }
+  } */
+
+  int nn = 0; 
+  for (std::wstring::iterator it = stext.begin(); it != stext.end(); it++) {
+    //wchar_t c = *it;
+    wchar_t c;
+    int ret = get_mb(&c, sstext.c_str(), nn);
+    nn++;
+    if (c == '\n') {
+      continue; // ignore newlines
+    }
+    //fprintf(stdout, "char: %s\n", c);
+
+    FT_Set_Transform(face, &matrix, &pen);
+
+    FT_UInt glyph_index = FT_Get_Char_Index( face, *it );
+    error = FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
+    if (error) {
+      fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not load character: '%ls'\n", &c);
+      continue;
+    }
+
+    /*FT_Glyph glyph;
+    error = FT_Get_Glyph( face->glyph, &glyph );
+    if (error) {
+      fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not get glyph: '%ls'\n", it);
+      continue;
+    } */
+
+    // add here 
+    // FT_Get_Glyph(face->glyph, &glyph);
+    // FT_Glyph_To_Bitmap(&glyph, FT_RENDER_MODE_NORMAL, 0, 1);
+
+    draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top);
+
+    pen.x += slot->advance.x;
+    pen.y += slot->advance.y;
+  } 
+
+
 
   FT_Done_Face(face);
 
@@ -621,6 +701,11 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
 
           // TODO: measures needs to be organized like the text after a resorting
           float a = atof(report->measures[j].find("physical_size")->second.c_str()) / 1000.0;
+
+          // If we do a log-normal distribution we need to compute the cdf (prob of being smaller than a)
+          // and the survival function (compelemnt of the cdf, prob of being larger than a), we should report the smaller of the two.
+
+
           // z-score is
           float zscore = (a - mean_mean) / mean_stds;
           float perc = 100.0f * 0.5f *  (1.0f + (boost::math::erf(zscore / sqrtf(2.0)))); // or, better behaving distribution
@@ -666,11 +751,15 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
 
     // use the generic method to draw text using image_buffer_gen
     // mark the top of the image as "Generated by AI"
-    addBar(report->keyImage, 20); // in dark yellow/orange
-    addToReportGen(kbuffer, font_file, 6, report->TitleText, 10, -25, 0);
-    addToReportGen(kbuffer, font_file, 6, std::string("[area") + (report->keyImagePositions.size()!=1?std::string("s"):std::string("")) + std::string(" of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, -5, 0);  
+    // what is the size of the keyImage?
+    int kw = report->keyImage->GetLargestPossibleRegion().GetSize()[0];
+    int barHeight = 0.04 * kw;
+    int fontSize = 0.012 * kw;
+    addBar(report->keyImage, barHeight); // in dark yellow/orange
+    addToReportGen(kbuffer, font_file, fontSize, report->TitleText, 10, (barHeight/2)-(fontSize), 0);
+    addToReportGen(kbuffer, font_file, fontSize, std::string("[area") + (report->keyImagePositions.size()!=1?std::string("s"):std::string("")) + std::string(" of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, 10+barHeight, 0);  
     if (report->VersionString.size() > 0)
-      addToReportGen(kbuffer, font_file, 6, report->VersionString, 10, 15, 0);  
+      addToReportGen(kbuffer, font_file, fontSize, report->VersionString, 10, (barHeight+5)*2, 0);  
 
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
@@ -681,12 +770,12 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
         std::string piece2 = report->keyImageTexts[k].substr(pos);
         //fprintf(stdout, "string: %s <-> %s", piece1.c_str(), piece2.c_str());
         // add a marker for the exact location, need to know how large the character is...
-        addMarker(kbuffer, report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
+        addMarker(kbuffer, report->keyImagePositions[k][0], report->keyImagePositions[k][1], fontSize);
 
-        addToReportGen(kbuffer, font_file, 10, piece1, report->keyImagePositions[k][0]-5 + 20, report->keyImagePositions[k][1]-30, 0);  
-        addToReportGen(kbuffer, font_file, 6, piece2, report->keyImagePositions[k][0]+35 + 20, report->keyImagePositions[k][1]-50, 0);  
+        addToReportGen(kbuffer, font_file, fontSize, piece1, report->keyImagePositions[k][0]-(5.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
+        addToReportGen(kbuffer, font_file, fontSize/2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(50.0/9.0*fontSize), 0);  
       } else {
-        addToReportGen(kbuffer, font_file, 6, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-30, 0);  
+        addToReportGen(kbuffer, font_file, fontSize/2, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
       }
     }
 
