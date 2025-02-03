@@ -757,7 +757,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
     int fontSize = 0.012 * kw;
     addBar(report->keyImage, barHeight); // in dark yellow/orange
     addToReportGen(kbuffer, font_file, fontSize, report->TitleText, 10, (barHeight/2)-(fontSize), 0);
-    addToReportGen(kbuffer, font_file, fontSize, std::string("[area") + (report->keyImagePositions.size()!=1?std::string("s"):std::string("")) + std::string(" of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 10, 10+barHeight, 0);  
+    addToReportGen(kbuffer, font_file, fontSize, std::string("[area") + (report->keyImagePositions.size()!=1?std::string("s"):std::string("")) + std::string(" of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 5, 15+barHeight, 0);  
     if (report->VersionString.size() > 0)
       addToReportGen(kbuffer, font_file, fontSize, report->VersionString, 10, (barHeight+5)*2, 0);  
 
@@ -776,7 +776,7 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
         addToReportGen(kbuffer, font_file, fontSize/2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(50.0/9.0*fontSize), 0);  
 
         // un-changeable text "Not for clinical use"
-        addToReportGen(kbuffer, font_file, fontSize/2, "Not for clinical use", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
+        addToReportGen(kbuffer, font_file, fontSize/2, "For Research Use Only – Not for use in diagnostic procedures.", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
       } else {
         addToReportGen(kbuffer, font_file, fontSize/2, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
       }
