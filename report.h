@@ -46,7 +46,7 @@ typedef struct {
 } Report;
 
 Report *getDefaultReportStruct();
-void saveReport(Report *report, float mean_mean = 23.31783, float mean_stds = 4.539313, bool verbose = false);
+void saveReport(Report *report, std::string distribution="norm", float mean_mean = 23.31783, float mean_stds = 4.539313, bool verbose = false);
 
 
 #endif

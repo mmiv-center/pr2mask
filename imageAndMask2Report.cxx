@@ -2477,7 +2477,8 @@ int main(int argc, char *argv[]) {
   // use the lognormal distribution as an alternative to the normal distribution
   // for this we can use boost/math/distributions/lognormal.hpp together with the location and scale of the distribution
 
-  // float mean_mean = 23.31783, float mean_stds = 4.539313
+  // float mean_mean = 23.31783, float mean_stds = 4.539313 (assume ZScoreDist = norm)
+  // float mean_mean = 2.045, float mean_stds = 1.36 (assume ZScoreDist = lognorm)
   command.SetOption("ZScoreMean", "z", false, "Set z-scores mean value (default: 23.31783).");
   command.SetOptionLongTag("ZScoreMean", "z-score-mean");
   command.AddOptionField("ZScoreMean", "value", MetaCommand::FLOAT, false);
@@ -2485,6 +2486,10 @@ int main(int argc, char *argv[]) {
   command.SetOption("ZScoreStd", "s", false, "Set z-score standard deviation (default: 4.539313).");
   command.SetOptionLongTag("ZScoreStd", "z-score-std");
   command.AddOptionField("ZScoreStd", "value", MetaCommand::FLOAT, false);
+
+  command.SetOption("ZScoreDist", "o", false, "Select the distribution used for the z-score calculation (norm|lognorm).");
+  command.SetOptionLongTag("ZScoreDist", "z-score-dist");
+  command.AddOptionField("ZScoreDist", "value", MetaCommand::STRING, false);
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -2496,6 +2501,17 @@ int main(int argc, char *argv[]) {
 
   float mean_mean = 23.31783;
   float mean_stds = 4.539313;
+  std::string distribution = "norm";
+  if (command.GetOptionWasSet("ZScoreDist")) {
+    std::string bla = command.GetValueAsString("ZScoreDist", "value");
+    bla.erase(remove( bla.begin(), bla.end(), '\"' ), bla.end());
+    if (bla == std::string("lognorm")) { // set default values for lognormal dstribution
+      mean_mean = 2.045;
+      mean_stds = 1.36;
+      distribution = "lognorm";
+    }
+  }
+
   if (command.GetOptionWasSet("ZScoreMean")) {
     mean_mean = command.GetValueAsFloat("ZScoreMean", "value");
     if (verbose) {
@@ -3219,7 +3235,7 @@ int main(int argc, char *argv[]) {
         }
 
         // default values only make sense if used for the spine segmentation project
-        saveReport(report, mean_mean, mean_stds, verbose);
+        saveReport(report, distribution, mean_mean, mean_stds, verbose);
 
         // add measures to json output, make sure to keep values from previous iteration
         if (!resultJSON.contains("measures")) {

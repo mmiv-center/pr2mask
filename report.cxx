@@ -23,6 +23,7 @@
 #include <codecvt>
 
 #include <boost/date_time.hpp>
+#include <boost/math/distributions/lognormal.hpp>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -579,7 +580,9 @@ void addToReport(char *buffer, std::string font_file, int font_size, std::string
   }
 }
 
-void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) {
+// Create a report image
+// distribution can be eiter "norm" or "lognorm" 
+void saveReport(Report *report, std::string distribution, float mean_mean, float mean_stds, bool verbose) {
 
   std::string font_file = "Menlo.ttf";
   if (const char *env_p = std::getenv("REPORT_FONT_PATH")) {
@@ -707,10 +710,21 @@ void saveReport(Report *report, float mean_mean, float mean_stds, bool verbose) 
 
 
           // z-score is
-          float zscore = (a - mean_mean) / mean_stds;
-          float perc = 100.0f * 0.5f *  (1.0f + (boost::math::erf(zscore / sqrtf(2.0)))); // or, better behaving distribution
-          //perc = 100*(/*0.5f * */ boost::math::erfc(- zscore / sqrtf(2.0)));
-          perc = 100.0f *  (1.0f + (boost::math::erf(- abs(zscore) / sqrtf(2.0))));
+          float perc = 0.0f;
+          float zscore = 0.0f;
+          if (distribution == "norm") {
+            zscore = (a - mean_mean) / mean_stds;
+            //perc = 100.0f * 0.5f *  (1.0f + (boost::math::erf(zscore / sqrtf(2.0)))); // or, better behaving distribution
+            //perc = 100*(/*0.5f * */ boost::math::erfc(- zscore / sqrtf(2.0)));
+            perc = 100.0f *  (1.0f + (boost::math::erf(- abs(zscore) / sqrtf(2.0))));
+          } else if (distribution == "lognorm") {
+            zscore = (log(a) - mean_mean) / mean_stds;
+            //zscore = boost::math::pdf(boost::math::lognormal(mean_mean, mean_stds), a);
+            perc = 100.0 * fmin(1.0-boost::math::cdf(boost::math::lognormal(mean_mean, mean_stds), a), boost::math::cdf(boost::math::lognormal(mean_mean, mean_stds), a));
+          } else {
+            fprintf(stderr, "Error: unknown distribution %s specified, only norm and lognorm are supported\n", distribution.c_str());
+            return;
+          }
 
           // create the message string
           char str2[256];
