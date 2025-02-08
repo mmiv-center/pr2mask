@@ -35,6 +35,7 @@ typedef struct {
   std::string key_unit;
   std::string InstitutionName;
   std::string TitleText;
+  std::string TextTopRight; // try to make this multi-line
   float BrightnessContrastLL;
   float BrightnessContrastUL;
   std::string ReportType;

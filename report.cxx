@@ -21,6 +21,7 @@
 #include <gdcmImage.h>
 #include <math.h>
 #include <codecvt>
+#include <sstream>
 
 #include <boost/date_time.hpp>
 #include <boost/math/distributions/lognormal.hpp>
@@ -788,6 +789,13 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
 
         addToReportGen(kbuffer, font_file, fontSize, piece1, report->keyImagePositions[k][0]-(5.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
         addToReportGen(kbuffer, font_file, fontSize/2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(50.0/9.0*fontSize), 0);  
+
+        // add TextTopRight
+        std::istringstream f(report->TextTopRight);
+        int c = 0;
+        for (std::string line; std::getline(f, line, '\n'); c++) {
+          addToReportGen(kbuffer, font_file, fontSize/2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0);
+        }
 
         // un-changeable text "Not for clinical use"
         addToReportGen(kbuffer, font_file, fontSize/2, "For Research Use Only – Not for use in diagnostic procedures.", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
