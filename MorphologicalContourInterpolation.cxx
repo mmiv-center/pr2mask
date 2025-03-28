@@ -135,7 +135,7 @@ MaskImageType::Pointer fineTune(MaskImageType::Pointer mask, std::string image_p
   DiffusionFilterType::Pointer diffusion = DiffusionFilterType::New();
   diffusion->SetNumberOfIterations( N );
   diffusion->SetTimeStep(0.05);
-  diffusion->SetConductanceParameter( 2.0 );
+  diffusion->SetConductanceParameter( 1.0 );
 
   using LaplacianSegmentationLevelSetImageFilterType =
     itk::LaplacianSegmentationLevelSetImageFilter< MaskImageType,

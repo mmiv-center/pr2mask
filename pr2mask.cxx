@@ -996,7 +996,8 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
     using InputFilterType = itk::PolylineMask2DScanlineImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
     InputFilterType::Pointer filter = InputFilterType::New();
     // tolerance as 1/10 of a voxel, does this do something?
-    double tol = std::min(im2change->GetSpacing()[2], std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1])) / 10.0;
+    // double tol = std::min(im2change->GetSpacing()[2], std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1])) / 10.0;
+    double tol = std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1]) / 10.0;
     filter->SetCoordinateTolerance(tol);
     int storageIdx = polyIds[p]; // we just use the first one
 
@@ -1007,12 +1008,32 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
     double spacingy = lmask->GetSpacing()[1];
     double originx = lmask->GetOrigin()[0];
     double originy = lmask->GetOrigin()[1];
+    using PT = typename ImageType2D::PointType;
 
+    // With the current algorithm we get a mask that starts after the first index but ends at the last (asymmetric).
     for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
       VertexType v0;
       // coordinates are in pixel, we need coordinates based on the bounding box
-      v0[0] = originx + spacingx * storage[storageIdx].coords[j];
-      v0[1] = originy + spacingy * storage[storageIdx].coords[j + 1];
+      int x = storage[storageIdx].coords[j];
+      int y = storage[storageIdx].coords[j + 1];
+      // limit the coordinates in pixel to the bounding box
+      if (x < 0)
+        x = 0;
+      if (y < 0)
+        y = 0;
+      if (x > mask->GetLargestPossibleRegion().GetSize()[0] - 1)
+        x = mask->GetLargestPossibleRegion().GetSize()[0] - 1;
+      if (y > mask->GetLargestPossibleRegion().GetSize()[1] - 1)
+        y = mask->GetLargestPossibleRegion().GetSize()[1] - 1;
+
+      // center of the first pixel is at originx and originy
+      PT floatIndex;
+      ImageType2D::IndexType index = {x, y};
+      lmask->TransformIndexToPhysicalPoint(index, floatIndex);
+      v0[0] = floatIndex[0];
+      v0[1] = floatIndex[1];
+      //v0[0] = (originx) + spacingx * (x);
+      //v0[1] = (originy) + spacingy * (y);
       inputPolyline->AddVertex(v0);
     }
 
@@ -1036,7 +1057,7 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
     itk::ImageRegionIterator<ImageType2D> lmaskIterator(lres, lmaskRegion);
     while (!maskIterator.IsAtEnd() && !lmaskIterator.IsAtEnd()) {
       if (lmaskIterator.Get() > 0) {
-        if (maskIterator.Get() > 0) {
+        if (maskIterator.Get() > 0) { // if the mask is already set, we have an overlap and we unset
           maskIterator.Set(0);
         } else {
           maskIterator.Set(1);
@@ -1562,7 +1583,8 @@ int main(int argc, char *argv[]) {
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
   std::string versionString = std::string("0.0.5.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
-  versionString.replace(versionString.find(".."), 2, ".");
+  if (versionString.find("..") != std::string::npos)
+    versionString.replace(versionString.find(".."), 2, ".");
   command.SetVersion(versionString.c_str());
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("PR2MASK: Convert presentation state files with polygons to label fields in DICOM format.");

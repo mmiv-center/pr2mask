@@ -8,12 +8,12 @@ RUN apt-get update -qq && apt-get install -yq build-essential \
 
 # install itk
 RUN cd /tmp/ \
-    && wget https://github.com/InsightSoftwareConsortium/ITK/releases/download/v5.3.0/InsightToolkit-5.3.0.tar.gz \
-    && cd /opt/ && tar xzvf /tmp/InsightToolkit-5.3.0.tar.gz && cd /opt/InsightToolkit-5.3.0 \
+    && wget https://github.com/InsightSoftwareConsortium/ITK/releases/download/v5.4.2/InsightToolkit-5.4.2.tar.gz \
+    && cd /opt/ && tar xzvf /tmp/InsightToolkit-5.4.2.tar.gz && cd /opt/InsightToolkit-5.4.2 \
     && sed -i '22i #include <cstdint>' Modules/Filtering/MathematicalMorphology/include/itkMathematicalMorphologyEnums.h \
     && sed -i "s/uint8_t/std::uint8_t/" Modules/Filtering/MathematicalMorphology/include/itkMathematicalMorphologyEnums.h \
     && mkdir bin && cd bin && cmake -DModule_MorphologicalContourInterpolation:BOOL=ON .. && make -j 4 \
-    && rm /tmp/InsightToolkit-5.3.0.tar.gz
+    && rm /tmp/InsightToolkit-5.4.2.tar.gz
 
 
 # install dcmtk

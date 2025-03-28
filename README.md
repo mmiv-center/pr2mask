@@ -219,7 +219,7 @@ If you want to build in macos you might need to specify the location of qt5 with
 cmake . -DCMAKE_PREFIX_PATH=/opt/homebrew/Cellar/qt@5/5.15.10
 ```
 
-If you update your build system and you are using a source code version of IKT you might need to rebuild IKT (5.3) with
+If you update your build system and you are using a source code version of IKT you might need to rebuild IKT (5.4) with
 
 ```
 cd InsightToolkit

@@ -449,17 +449,17 @@ void PolylineMask2DScanlineImageFilter<TInputImage, TPolyline, TOutputImage>::Ge
   */
 
   /* Mask the input image with the mask generated */
-  InputImageConstIteratorType inputI(inputImagePtr, inputImagePtr->GetLargestPossibleRegion());
+  //InputImageConstIteratorType inputI(inputImagePtr, inputImagePtr->GetLargestPossibleRegion());
   OutputImageIteratorType outputI(outputImagePtr, outputImagePtr->GetLargestPossibleRegion());
-  inputI.GoToBegin();
+  //inputI.GoToBegin();
   outputI.GoToBegin();
   while (!outputI.IsAtEnd()) {
     if (outputI.Get() == f_val) {
-      outputI.Set(inputI.Get());
+      outputI.Set(1 /*inputI.Get()*/);  // we don't want to mask the pixel values, we want the mask itself (value inside should be 1)
     } else {
       outputI.Set(zero_val);
     }
-    ++inputI;
+    //++inputI;
     ++outputI;
   }
 }

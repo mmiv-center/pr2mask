@@ -6,10 +6,10 @@ endif()
 
 project(PR2MASK)
 
-if (EXISTS "/Users/hauke/src/itk/InsightToolkit-5.3.0/bin")
-  set(ITK_DIR /Users/hauke/src/itk/InsightToolkit-5.3.0/bin)
+if (EXISTS "/Users/hauke/src/itk/InsightToolkit-5.4.2/bin")
+  set(ITK_DIR /Users/hauke/src/itk/InsightToolkit-5.4.2/bin)
 else()
-  set(ITK_DIR /opt/InsightToolkit-5.3.0/bin)
+  set(ITK_DIR /opt/InsightToolkit-5.4.2/bin)
 endif()
 
 #set(CMAKE_CXX_STANDARD 20)
@@ -18,16 +18,16 @@ endif()
 
 # find the correct path for isysroot with `xcrun --show-sdk-path`
 IF("${CMAKE_SYSTEM}" MATCHES "Linux")
-   if (EXISTS "/opt/InsightToolkit-5.3.0/bin")
-      set(ITK_DIR /opt/InsightToolkit-5.3.0/bin)
+   if (EXISTS "/opt/InsightToolkit-5.4.2/bin")
+      set(ITK_DIR /opt/InsightToolkit-5.4.2/bin)
    endif()
 
    set (CMAKE_CXX_STANDARD 17)
    SET(CMAKE_CXX_FLAGS "-std=c++17 -I/usr/local/include -I/usr/include")
 ELSEIF("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm64")
-   # InsightToolkit-5.3.0			
-   if (EXISTS "../InsightToolkit-5.3.0/bin")
-      set(ITK_DIR ..//InsightToolkit-5.3.0/bin)
+   # InsightToolkit-5.4.2			
+   if (EXISTS "../InsightToolkit-5.4.2/bin")
+      set(ITK_DIR ..//InsightToolkit-5.4.2/bin)
    endif()
    message(STATUS CMAKE_HOST_SYSTEM_PROCESSOR = ${CMAKE_HOST_SYSTEM_PROCESSOR})
    set (CMAKE_CXX_STANDARD 17)
