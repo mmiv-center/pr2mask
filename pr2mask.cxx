@@ -1799,6 +1799,8 @@ int main(int argc, char *argv[]) {
     std::string ReferringPhysician("");
     std::string AccessionNumber("");
     std::string StudyID("");
+    std::string SliceLocation("");
+    std::string InstanceNumber("");
 
     SeriesIdContainer runThese;
     if (seriesIdentifierFlag) { // If no optional series identifier
@@ -1907,6 +1909,8 @@ int main(int argc, char *argv[]) {
           itk::ExposeMetaData<std::string>(dictionary, "0020|0011", seriesNumber);
           itk::ExposeMetaData<std::string>(dictionary, "0020|000d", StudyInstanceUID);
           itk::ExposeMetaData<std::string>(dictionary, "0008|103e", SeriesDescription);
+          itk::ExposeMetaData<std::string>(dictionary, "0020|1041", SliceLocation);
+          itk::ExposeMetaData<std::string>(dictionary, "0020|0013", InstanceNumber);
 
           // make a copy of this image series in the output/images/ folder
           if (1) {
@@ -1980,6 +1984,14 @@ int main(int argc, char *argv[]) {
               // We should use only one of these, the one with the latest contribution date time.
               // Keep them if they have the same ContributionDateTime. Maybe best if we filter storage.
               polyIds.push_back(i);
+
+              // add the SliceLocation back to resultJSON["POLYLINES"]
+              for (auto& [key, val] : resultJSON["POLYLINES"].items()) {
+                if (val["ReferencedSOPInstanceUID"] == SOPInstanceUID) {
+                  val["SliceLocation"] = SliceLocation;
+                  val["InstanceNumber"] = InstanceNumber;
+                }
+              }
             }
           }
           // using InputPolylineType = itk::PolyLineParametricPath<2>;
