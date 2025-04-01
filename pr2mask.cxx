@@ -1987,7 +1987,7 @@ int main(int argc, char *argv[]) {
 
               // add the SliceLocation back to resultJSON["POLYLINES"]
               for (auto& [key, val] : resultJSON["POLYLINES"].items()) {
-                if (val["ReferencedSOPInstanceUID"] == SOPInstanceUID) {
+                if (val["ReferencedSOPInstanceUID"].get<std::string>() == SOPInstanceUID) {
                   val["SliceLocation"] = SliceLocation;
                   val["InstanceNumber"] = InstanceNumber;
                 }
