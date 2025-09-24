@@ -119,7 +119,7 @@ target_compile_features(imageAndMask2Report PRIVATE cxx_std_17)
 add_executable(json2SR json2SR.cxx)
 target_include_directories(json2SR PUBLIC ${DCMTK_INCLUDE_DIRS})
 target_link_directories(json2SR PUBLIC ../dcmtk/dcmsr/libsrc ../dcmtk/dcmimage/libsrc ../dcmtk/dcmimgle/libsrc ../dcmtk/dcmdata/libsrc ../dcmtk/oflog/libsrc ../dcmtk/ofstd/libsrc ../dcmtk/oficonv/libsrc ../dcmtk/dcmpstat/libsrc ../dcmtk/lib)
-target_link_libraries(json2SR dcmdata cmr dcmdsig dcmect dcmfg dcmiod dcmjpeg dcmjpls dcmnet dcmpmap dcmqrdb dcmrt dcmseg dcmtkcharls dcmtls dcmtract dcmwlm dcmxml i2d ijg12 dcmpstat dcmimage dcmimgle dcmsr oflog ofstd oficonv xml2 z zlib ${Boost_LIBRARIES} pthread)
+target_link_libraries(json2SR dcmdata cmr dcmdsig dcmect dcmfg dcmiod dcmjpeg dcmjpls dcmnet dcmpmap dcmqrdb dcmrt dcmseg dcmtkcharls dcmtls dcmtract dcmwlm dcmxml i2d ijg12 dcmpstat dcmsr dcmimage dcmimgle oflog ofstd oficonv xml2 z zlib ${Boost_LIBRARIES} pthread)
 #target_compile_features(json2SR PRIVATE cxx_std_17)
 
 # Interpolate labels in a mask file with gaps
