@@ -18,8 +18,8 @@ endif()
 
 # find the correct path for isysroot with `xcrun --show-sdk-path`
 IF("${CMAKE_SYSTEM}" MATCHES "Linux")
-   if (EXISTS "/opt/InsightToolkit-5.4.2/bin")
-      set(ITK_DIR /opt/InsightToolkit-5.4.2/bin)
+   if (EXISTS "/opt/InsightToolkit-5.4.4/bin")
+      set(ITK_DIR /opt/InsightToolkit-5.4.4/bin)
    endif()
 
    set (CMAKE_CXX_STANDARD 17)
@@ -62,7 +62,7 @@ find_package(Boost CONFIG)
 #  find_package(Boost REQUIRED COMPONENTS system filesystem)
 #endif()
 
-find_package(Boost 1.70 REQUIRED COMPONENTS filesystem regex program_options timer date_time PATHS /opt/homebrew/lib/cmake/Boost-1.89.0/)
+find_package(Boost ${boost_min_ver} REQUIRED COMPONENTS filesystem regex program_options timer date_time PATHS /opt/homebrew/lib/cmake/Boost-1.89.0/)
 
 
 if(Boost_FOUND)
