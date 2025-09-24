@@ -1630,6 +1630,20 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   at15.SetValue(newFusedSeriesInstanceUID);
   ds.Replace(at15.GetAsDataElement());
 
+  std::time_t t = std::time(nullptr);
+  char mbstr[100];
+  gdcm::Attribute<0x0008, 0x0021> at17;
+  if (std::strftime(mbstr, sizeof(mbstr), "%Y%m%d", std::localtime(&t))) {
+    at17.SetValue(mbstr);
+    ds.Replace(at17.GetAsDataElement());
+  }
+
+  gdcm::Attribute<0x0008, 0x0031> at18;
+  if (std::strftime(mbstr, sizeof(mbstr), "%H%M%S", std::localtime(&t))) {
+    at18.SetValue(mbstr);
+    ds.Replace(at18.GetAsDataElement());
+  }
+
   gdcm::ImageWriter writer;
   writer.SetImage(image);
   writer.SetFile(fd.GetFile());
@@ -2826,6 +2840,10 @@ int main(int argc, char *argv[]) {
 
         std::string StudyDescription;
 
+        std::string SeriesDate;
+
+        std::string SeriesTime;
+
         // we need to reset some attributes because they are stack specific
         PatientName = "";
         PatientID = "";
@@ -2836,6 +2854,17 @@ int main(int argc, char *argv[]) {
         StudyID = "";
         InstitutionName = "";
         StudyDescription = "";
+        SeriesDate = "";
+        SeriesTime = "";
+
+        std::time_t t = std::time(nullptr);
+        char mbstr[100];
+        if (std::strftime(mbstr, sizeof(mbstr), "%Y%m%d", std::localtime(&t))) {
+          SeriesDate = std::string(mbstr);
+        }
+        if (std::strftime(mbstr, sizeof(mbstr), "%H%M%S", std::localtime(&t))) {
+          SeriesTime = std::string(mbstr);
+        }
 
         //  loop over all files in this series
         for (int sliceNr = 0; sliceNr < fileNames.size(); sliceNr++) {
@@ -3109,6 +3138,9 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|000e", newSeriesInstanceUID);
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0020|0010", StudyInstanceUID);
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0080", InstitutionName);
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0021", SeriesDate);
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0031", SeriesTime);
+          // add the current date and time as SeriesDate and SeriesTime
 
           // set to DERIVED\\SECONDARY
 /*          gdcm::File &fd = r->GetFile();
@@ -3201,6 +3233,8 @@ int main(int argc, char *argv[]) {
         report->InstitutionName = InstitutionName;
         report->BrightnessContrastLL = brightness_contrast_ll;
         report->BrightnessContrastUL = brightness_contrast_ul;
+        report->SeriesDate = SeriesDate;
+        report->SeriesTime = SeriesTime;
         report->ReportType = (isMosaic?"mosaic":"curvilinear");
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
@@ -3276,6 +3310,8 @@ int main(int argc, char *argv[]) {
           { "SeriesDescription", report->SeriesDescription },
           { "StudyDate", report->StudyDate },
           { "StudyTime", report->StudyTime },
+          { "SeriesDate", report->SeriesDate },
+          { "SeriesTime", report->SeriesTime },
           { "InputImageSeriesIdentifier", seriesIdentifier },
           { "InputMaskSeriesIdentifier", maskSeriesIdentifier },
       	  { "ReportSOPInstanceUID", report->SOPInstanceUID },

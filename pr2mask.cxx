@@ -594,6 +594,21 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   at15.SetValue(newFusedSeriesInstanceUID);
   ds.Replace(at15.GetAsDataElement());
 
+
+  std::time_t t = std::time(nullptr);
+  char mbstr[100];
+  gdcm::Attribute<0x0008, 0x0021> at16;
+  if (std::strftime(mbstr, sizeof(mbstr), "%Y%m%d", std::localtime(&t))) {
+    // report->SeriesDate = std::string(mbstr);
+    at16.SetValue(mbstr);
+    ds.Replace(at16.GetAsDataElement());
+  }
+  gdcm::Attribute<0x0008, 0x0031> at17;
+  if (std::strftime(mbstr, sizeof(mbstr), "%H%M%S", std::localtime(&t))) {
+    at17.SetValue(mbstr);
+    ds.Replace(at17.GetAsDataElement());
+  }
+
   gdcm::ImageWriter writer;
   writer.SetImage(image);
   writer.SetFile(fd.GetFile());

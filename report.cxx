@@ -77,6 +77,18 @@ Report *getDefaultReportStruct() {
   report->SeriesDescription = std::string("Report");
   report->StudyDate = std::string("");
   report->StudyTime = std::string("");
+
+  report->SeriesDate = std::string("");
+  report->SeriesTime = std::string("");
+  std::time_t t = std::time(nullptr);
+  char mbstr[100];
+  if (std::strftime(mbstr, sizeof(mbstr), "%Y%m%d", std::localtime(&t))) {
+    report->SeriesDate = std::string(mbstr);
+  }
+  if (std::strftime(mbstr, sizeof(mbstr), "%H%M%S", std::localtime(&t))) {
+    report->SeriesTime = std::string(mbstr);
+  }
+
   report->measures = std::vector<std::map<std::string, std::string>>();
   report->key_fact = std::string("");
   report->key_unit = std::string("");
@@ -883,6 +895,8 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
     anon.Replace(gdcm::Tag(0x0008, 0x0090), report->ReferringPhysician.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x0021), report->SeriesDate.c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x0031), report->SeriesTime.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x1030), report->StudyDescription.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
@@ -1361,6 +1375,8 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
     //  anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x0021), report->SeriesDate.c_str());
+    anon.Replace(gdcm::Tag(0x0008, 0x0031), report->SeriesTime.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
     anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
 

@@ -31,6 +31,8 @@ typedef struct {
   std::string ReportSOPInstanceUID;
   std::string StudyDate;
   std::string StudyTime;
+  std::string SeriesDate;
+  std::string SeriesTime;
   std::string key_fact;
   std::string key_unit;
   std::string InstitutionName;
