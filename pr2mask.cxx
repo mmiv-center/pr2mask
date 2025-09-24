@@ -499,7 +499,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   ds.Replace(at1.GetAsDataElement());
 
   gdcm::Attribute<0x0008, 0x0060> at2; // Derivative Description
-  at2.SetValue("MR");
+  at2.SetValue("MR"); // TODO: this should be more general
   ds.Replace(at2.GetAsDataElement());
 
   gdcm::Attribute<0x0020, 0x000E> at3;
