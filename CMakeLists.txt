@@ -6,8 +6,8 @@ endif()
 
 project(PR2MASK)
 
-if (EXISTS "/Users/hauke/src/itk/InsightToolkit-5.4.2/bin")
-  set(ITK_DIR /Users/hauke/src/itk/InsightToolkit-5.4.2/bin)
+if (EXISTS "/Users/hauke/src/itk/InsightToolkit-5.4.4/bin")
+  set(ITK_DIR /Users/hauke/src/itk/InsightToolkit-5.4.4/bin)
 else()
   set(ITK_DIR /opt/InsightToolkit-5.4.2/bin)
 endif()
@@ -25,9 +25,9 @@ IF("${CMAKE_SYSTEM}" MATCHES "Linux")
    set (CMAKE_CXX_STANDARD 17)
    SET(CMAKE_CXX_FLAGS "-std=c++17 -I/usr/local/include -I/usr/include")
 ELSEIF("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm64")
-   # InsightToolkit-5.4.2			
-   if (EXISTS "../InsightToolkit-5.4.2/bin")
-      set(ITK_DIR ..//InsightToolkit-5.4.2/bin)
+   # InsightToolkit-5.4.4			
+   if (EXISTS "../InsightToolkit-5.4.4/bin")
+      set(ITK_DIR ..//InsightToolkit-5.4.4/bin)
    endif()
    message(STATUS CMAKE_HOST_SYSTEM_PROCESSOR = ${CMAKE_HOST_SYSTEM_PROCESSOR})
    set (CMAKE_CXX_STANDARD 17)
@@ -52,13 +52,23 @@ ELSE(ITK_FOUND)
 ENDIF(ITK_FOUND)
 
 # Boost
-set(boost_min_ver 1.50.0)
-set(boost_libs system filesystem timer date_time program_options)
-find_package(Boost ${boost_min_ver})
+set(boost_min_ver 1.80.0)
+#set(boost_libs system filesystem timer date_time program_options)
+#find_package(Boost ${boost_min_ver} REQUIRED)
+find_package(Boost CONFIG)
+
+#if(Boost_FOUND)
+#   find_package(Boost REQUIRED COMPONENTS ${boost_libs})
+#  find_package(Boost REQUIRED COMPONENTS system filesystem)
+#endif()
+
+find_package(Boost 1.70 REQUIRED COMPONENTS filesystem regex program_options timer date_time PATHS /opt/homebrew/lib/cmake/Boost-1.89.0/)
+
 
 if(Boost_FOUND)
-  find_package(Boost ${boost_min_ver} COMPONENTS ${boost_libs})
-endif()
+  MESSAGE(STATUS ">>> Found Boost")
+  MESSAGE(BOOSTLIBS="${Boost_LIBRARIES}")
+ENDIF()
 
 find_package(TBB REQUIRED)
 
@@ -91,9 +101,9 @@ ENDIF()
 
 # target_link_libraries(your_target ${Boost_LIBRARIES})
 add_executable(pr2mask pr2mask.cxx report.h report.cxx itkPolylineMask2DScanlineImageFilter.hxx)
-target_include_directories(pr2mask PUBLIC ${FREETYPE_INCLUDE_DIRS})
-target_link_libraries(pr2mask ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES})
-#target_compile_features(pr2mask PRIVATE cxx_std_17)
+target_include_directories(pr2mask PUBLIC ${Boost_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
+target_link_libraries(pr2mask PUBLIC ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES})
+#target_compile_features(pr2mask PRIVATE Boost::system cxx_std_17)
 
 add_executable(mask2rtstruct mask2rtstruct.cxx)
 target_link_libraries(mask2rtstruct ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb)
@@ -108,8 +118,8 @@ target_compile_features(imageAndMask2Report PRIVATE cxx_std_17)
 # structured report from json
 add_executable(json2SR json2SR.cxx)
 target_include_directories(json2SR PUBLIC ${DCMTK_INCLUDE_DIRS})
-target_link_directories(json2SR PUBLIC ../dcmtk/dcmsr/libsrc ../dcmtk/dcmimage/libsrc ../dcmtk/dcmimgle/libsrc ../dcmtk/dcmdata/libsrc ../dcmtk/oflog/libsrc ../dcmtk/ofstd/libsrc ../dcmtk/oficonv/libsrc ../dcmtk/lib)
-target_link_libraries(json2SR dcmsr dcmimage dcmimgle dcmdata oflog ofstd oficonv xml2 z zlib ${Boost_LIBRARIES} pthread)
+target_link_directories(json2SR PUBLIC ../dcmtk/dcmsr/libsrc ../dcmtk/dcmimage/libsrc ../dcmtk/dcmimgle/libsrc ../dcmtk/dcmdata/libsrc ../dcmtk/oflog/libsrc ../dcmtk/ofstd/libsrc ../dcmtk/oficonv/libsrc ../dcmtk/dcmpstat/libsrc ../dcmtk/lib)
+target_link_libraries(json2SR dcmdata cmr dcmdsig dcmect dcmfg dcmiod dcmjpeg dcmjpls dcmnet dcmpmap dcmqrdb dcmrt dcmseg dcmtkcharls dcmtls dcmtract dcmwlm dcmxml i2d ijg12 dcmpstat dcmimage dcmimgle dcmsr oflog ofstd oficonv xml2 z zlib ${Boost_LIBRARIES} pthread)
 #target_compile_features(json2SR PRIVATE cxx_std_17)
 
 # Interpolate labels in a mask file with gaps
