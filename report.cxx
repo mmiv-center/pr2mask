@@ -94,6 +94,8 @@ Report *getDefaultReportStruct() {
   report->key_unit = std::string("");
   report->VersionString = std::string("");
   report->TitleText = std::string("MMIV.no report. Made with AI");
+  report->TextTopRight = std::string("");
+  report->TextTopRightLabels = std::map<int, std::string>();
   return report;
 }
 
@@ -803,10 +805,19 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
         addToReportGen(kbuffer, font_file, fontSize/2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(50.0/9.0*fontSize), 0);  
 
         // add TextTopRight
-        std::istringstream f(report->TextTopRight);
-        int c = 0;
-        for (std::string line; std::getline(f, line, '\n'); c++) {
-          addToReportGen(kbuffer, font_file, fontSize/2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0);
+        // if we have a TextTopRightLabels we would prefer those, instead of the generic TextTopRight
+        if (report->TextTopRightLabels.count(k) == 1) {
+          std::istringstream f(report->TextTopRightLabels[k]);
+          int c = 0;
+          for (std::string line; std::getline(f, line, '\n'); c++) {
+            addToReportGen(kbuffer, font_file, fontSize/2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0);
+          }
+        } else if (report->TextTopRight.size() > 0) {
+          std::istringstream f(report->TextTopRight);
+          int c = 0;
+          for (std::string line; std::getline(f, line, '\n'); c++) {
+            addToReportGen(kbuffer, font_file, fontSize/2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0);
+          }
         }
 
         // un-changeable text "Not for clinical use"

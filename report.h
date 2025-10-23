@@ -38,6 +38,7 @@ typedef struct {
   std::string InstitutionName;
   std::string TitleText;
   std::string TextTopRight; // try to make this multi-line
+  std::map<int, std::string> TextTopRightLabels; // try to make this multi-line with labels
   float BrightnessContrastLL;
   float BrightnessContrastUL;
   std::string ReportType;

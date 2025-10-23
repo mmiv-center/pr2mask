@@ -2509,6 +2509,17 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("TextTopRight", "sources-text");
   command.AddOptionField("TextTopRight", "value", MetaCommand::STRING, false);
 
+  command.SetOption("TextTopRight1", "", false, "Free text for label 1 in top-right corner specifying the dependent source data (SeriesNumber, SequenceName). For this field newlines coded as '\n' are allowed.");
+  command.SetOptionLongTag("TextTopRight1", "sources-text-1");
+  command.AddOptionField("TextTopRight1", "value", MetaCommand::STRING, false);
+
+  command.SetOption("TextTopRight2", "", false, "Free text for label 2 in top-right corner specifying the dependent source data (SeriesNumber, SequenceName). For this field newlines coded as '\n' are allowed.");
+  command.SetOptionLongTag("TextTopRight2", "sources-text-2");
+  command.AddOptionField("TextTopRight2", "value", MetaCommand::STRING, false);
+
+  command.SetOption("TextTopRight3", "", false, "Free text for label 3 in top-right corner specifying the dependent source data (SeriesNumber, SequenceName). For this field newlines coded as '\n' are allowed.");
+  command.SetOptionLongTag("TextTopRight3", "sources-text-3");
+  command.AddOptionField("TextTopRight3", "value", MetaCommand::STRING, false);
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -2550,6 +2561,16 @@ int main(int argc, char *argv[]) {
     if (verbose) {
       fprintf(stdout, "read new origin text from command line: %s\n", textTopRight.c_str());
     }
+  }
+  std::map<int, std::string> textTopRightLabels;
+  if (command.GetOptionWasSet("TextTopRight1")) {
+    textTopRightLabels.insert(std::make_pair(0, command.GetValueAsString("TextTopRight1", "value")));
+  }
+  if (command.GetOptionWasSet("TextTopRight2")) {
+    textTopRightLabels.insert(std::make_pair(1, command.GetValueAsString("TextTopRight2", "value")));
+  }
+  if (command.GetOptionWasSet("TextTopRight3")) {
+    textTopRightLabels.insert(std::make_pair(2, command.GetValueAsString("TextTopRight3", "value")));
   }
 
   if (verbose) {
@@ -3219,6 +3240,7 @@ int main(int argc, char *argv[]) {
         report->VersionString = infoMessage; // might be specified by the user or empty string
         report->TitleText = titleText; // not allowed to be empty string
         report->TextTopRight = textTopRight;
+        report->TextTopRightLabels = textTopRightLabels;
         report->PatientName = PatientName;
         report->PatientID = PatientID;
         report->StudyDate = StudyDate;
