@@ -115,6 +115,13 @@ target_include_directories(imageAndMask2Report PUBLIC ${FREETYPE_INCLUDE_DIRS})
 target_link_libraries(imageAndMask2Report ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES} ${GDCM_LIBRARIES} libzip::zip)
 target_compile_features(imageAndMask2Report PRIVATE cxx_std_17)
 
+# imageAndMask2Fused.cxx
+add_executable(imageAndMask2Fused imageAndMask2Fused.cxx)
+target_include_directories(imageAndMask2Fused PUBLIC ${FREETYPE_INCLUDE_DIRS})
+target_link_libraries(imageAndMask2Fused ${ITK_LIBRARIES} ${Boost_LIBRARIES} TBB::tbb ${FREETYPE_LIBRARIES} ${GDCM_LIBRARIES} libzip::zip)
+target_compile_features(imageAndMask2Fused PRIVATE cxx_std_17)
+
+
 # structured report from json
 add_executable(json2SR json2SR.cxx)
 target_include_directories(json2SR PUBLIC ${DCMTK_INCLUDE_DIRS})
@@ -125,3 +132,4 @@ target_link_libraries(json2SR dcmdata cmr dcmdsig dcmect dcmfg dcmiod dcmjpeg dc
 # Interpolate labels in a mask file with gaps
 add_executable(MorphologicalContourInterpolation MorphologicalContourInterpolation.cxx)
 target_link_libraries(MorphologicalContourInterpolation ${ITK_LIBRARIES} ${Boost_LIBRARIES} pthread)
+

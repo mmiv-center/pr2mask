@@ -25,7 +25,7 @@ static inline std::string rtrim_copy(std::string s) {
 }
 
 // I am not sure why I need this..  its defined in dsrtnant.cc and dsrdoctn.cc
-/* // only required on macos right now
+// only required on macos right now
 OFBool operator==(const DSRDocumentTreeNode &lhs,
                   const DSRDocumentTreeNode &rhs)
 {
@@ -51,7 +51,7 @@ OFBool operator!=(const DSRTreeNodeAnnotation &lhs,
                   const DSRTreeNodeAnnotation &rhs)
 {
     return lhs.isNotEqual(rhs);
-    }*/
+}
 
 // forward declarations
 static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &report);
@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
                 }
             }
         } else {
-            fprintf(stderr, "Error: no meta-data field found in input json\n");
+            fprintf(stderr, "Error: no meta-data field found in \"%s\" json\n", input[i].c_str());
         }
 
         generate(doc, studyUID_01, report);
@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
             dataset = fileformat->getDataset();
         if (dataset != NULL) {
                 doc->getCodingSchemeIdentification().addPrivateDcmtkCodingScheme();
-                fprintf(stdout, "We are putting strings out\n");
+                fprintf(stdout, "Info: create document for \"%s\"\n", input[i].c_str());
                 if (doc->write(*dataset).good()) {
                     // now set the meta data for this document (make part of our study)
                     dataset->putAndInsertString(DCM_StudyInstanceUID, StudyInstanceUID.c_str());
@@ -181,10 +181,11 @@ int main(int argc, char *argv[]) {
                     if (meta.size() > 0 && meta[0].contains("InstitutionName")) {
                         std::string InstitutionName = meta[0]["InstitutionName"];
                         dataset->putAndInsertString(DCM_InstitutionName, InstitutionName.c_str());
-                    }
+                    } 
 
                     std::cout << "Write: " << outputFilename << "..." << OFendl;
                     OFString filename(outputFilename.c_str());
+                    //OFString filename("/tmp/bla/bla.dcm");
                     if (fileformat->saveFile(filename, EXS_LittleEndianExplicit).bad())
                         CERR << "ERROR: could not save dataset to file '" << filename << "'" << OFendl;
                     else {
