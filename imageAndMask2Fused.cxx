@@ -1161,11 +1161,11 @@ int main(int argc, char *argv[]) {
   command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM. The redcap/ folder contains series folders with output.json files for REDCap imports.", MetaCommand::STRING, true);
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
 
-  command.SetOption("TitleText", "t", false, "Specify the title text on the report.");
+  command.SetOption("TitleText", "t", false, "Specify the title text on the fused image.");
   command.SetOptionLongTag("TitleText", "title");
   command.AddOptionField("TitleText", "title", MetaCommand::STRING, false);
 
-  command.SetOption("Info", "i", false, "Specify an info message that will appear in the report. This option can be used to identify the version/container used for creating the segmentation.");
+  command.SetOption("Info", "i", false, "Specify an info message that will appear in the bottom left corner. This option can be used to identify the version/container used for creating the segmentation.");
   command.SetOptionLongTag("Info", "info");
   command.AddOptionField("Info", "info", MetaCommand::STRING, false);
 
