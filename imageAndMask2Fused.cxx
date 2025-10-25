@@ -58,9 +58,16 @@ using CImageType = itk::Image<CPixelType, 3>;
 using ImageType2D = itk::Image<PixelType, 2>;
 using CImageType2D = itk::Image<CPixelType, 2>;
 
+// accumulate the overlay text into a separate kbuffer at this size
 unsigned int image_buffer_gen_size[2] = {0,0};
 unsigned char **image_buffer_gen = NULL;
 
+typedef struct {
+  std::string title;
+  std::string info;
+  float brightnessContrastLL;
+  float brightnessContrastUL;
+} OverlayInfos_t;
 
 bool verbose = false;
 bool stableUIDs = true;
@@ -209,7 +216,7 @@ MaskImageType3D::Pointer readMaskImageSerie(std::string dirName) {
   return nullptr; 
 }
 
-// add a colored bar over the top of the image
+// add a colored bar over the top of every image
 void addBar(CImageType::Pointer img, int height) {
   CImageType::RegionType kregion = img->GetLargestPossibleRegion();
   using ImageSizeType = typename CImageType::SizeType;
@@ -321,7 +328,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   }
 
   int start_px = 40;
-  int start_py = 40;
+  int start_py = 20;
   int text_lines = 1;
 
   float repeat_spacing = 1.0f;
@@ -436,7 +443,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
 
 
 // use the reference image folder as a source of DICOM tag values for the fusedImage and save a new RGB image series to outputDir
-int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, std::string referenceDir) {
+int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, std::string referenceDir, OverlayInfos_t *overlayInfo) {
   // maybe better use https://docs.itk.org/projects/doxygen/en/stable/Examples_2IO_2DicomSeriesReadSeriesWrite_8cxx-example.html
 
   // we would need to mark this buffer_fusedImage as AI with red bar and text
@@ -463,7 +470,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     for (int i = 0; i < KHEIGHT; i++) {
       image_buffer_gen[i] = (unsigned char*)malloc(KWIDTH * sizeof(unsigned char));
       if (!image_buffer_gen[i]) {
-        fprintf(stderr, "Error allocating memory for report image\n");
+        fprintf(stderr, "Error allocating memory for fused overlay image\n");
         fflush(stderr);
         exit(-1); // give up
       }
@@ -471,18 +478,66 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
   }
 
   int kw = kregion.GetSize()[0];
-  int barHeight = 0.04 * kw;
-  int fontSize = 0.012 * kw;
+  int barHeight = 0.07 * kw;
+  int fontSize = std::max<int>(6, 0.012 * kw);
   addBar(fusedImage, barHeight);
-  addToReportGen(kbuffer, font_file, fontSize, "SOME TITLE text", 10, (barHeight/2)-(fontSize), 0);
+  addToReportGen(kbuffer, font_file, fontSize, overlayInfo->title, 8, -22, 0);
+  addToReportGen(kbuffer, font_file, fontSize, overlayInfo->info, 5, KHEIGHT-50, 0);
 
+  using ImageSizeType = typename CImageType::SizeType;
+  ImageSizeType regionSize;
+  int numSlices = kregion.GetSize()[2];
   // now write the kbuffer into the fusedImage (into every single slice) kbuffer is 2D
-  for (int sliceNr = 0; sliceNr < kregion.GetSize()[2]; sliceNr++) {
-    //unsigned char *sliceBuffer = fusedImage->GetPixelContainer()->GetBufferPointer();
-    //sliceBuffer += sliceNr * KWIDTH * KHEIGHT * 3; // 3 for RGB  
+  for (int sliceNr = 0; sliceNr < numSlices; sliceNr++) {
+    kregion = fusedImage->GetLargestPossibleRegion();
+    regionSize[0] = kregion.GetSize()[0];
+    regionSize[1] = kregion.GetSize()[1];
+    regionSize[2] = 1;
+    kregion.SetSize(regionSize);
+    CImageType::RegionType::IndexType regionStart;
+    regionStart = kregion.GetIndex();
+    regionStart[2] = sliceNr;
+    kregion.SetIndex(regionStart);
 
+    itk::ImageRegionIteratorWithIndex<CImageType> kIterator(fusedImage, kregion);
+    kIterator.GoToBegin();
+    while(!kIterator.IsAtEnd()) {
+      CPixelType value = kIterator.Value(); 
+      CImageType::IndexType kidx = kIterator.GetIndex(); 
 
+      // the grayscale input image (fused image)
+      int c1 = (int)(value.GetRed());
+      int c2 = (int)(value.GetGreen());
+      int c3 = (int)(value.GetBlue());
+
+      // the grayscale text image where 0 is transparent and 255 is fully colored text to be fused with fusedImage
+      int ttt = (unsigned char)kbuffer[kidx[1]*KWIDTH + kidx[0]]; // 0 to 255
+
+      float alpha_a = (float)(ttt/255.0);
+      float alpha_b = 0.5;
+      float alpha = alpha_a + alpha_b*(1.0 - alpha_a); // alpha of text is ttt/255, alpha of b is 0
+      float C_a_r = 1.0;
+      float C_a_g = 237.0/255.0;
+      float C_a_b = 160.0/255.0;
+      float C_b_r = c1/255.0;
+      float C_b_g = c2/255.0;
+      float C_b_b = c3/255.0;
+      float Cr = (C_a_r * alpha_a + (C_b_r * alpha_b *(1.0 - alpha_a)))/alpha;
+      float Cg = (C_a_g * alpha_a + (C_b_g * alpha_b *(1.0 - alpha_a)))/alpha;
+      float Cb = (C_a_b * alpha_a + (C_b_b * alpha_b *(1.0 - alpha_a)))/alpha;
+      Cr = std::min<float>(1, std::max<float>(0,Cr));
+      Cg = std::min<float>(1, std::max<float>(0,Cg));
+      Cb = std::min<float>(1, std::max<float>(0,Cb));
+
+      value.SetRed((int)(255.0 * Cr));
+      value.SetGreen((int)(255.0 * Cg));
+      value.SetBlue((int)(255.0 * Cb));
+      kIterator.Set(value);
+
+      ++kIterator;
+    }
   }
+  free(kbuffer);
   // end putting text into fusedImage
 
   using ReaderType = itk::ImageSeriesReader<ImageType3D>;
@@ -648,8 +703,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     image.SetSpacing(1, im2change->GetSpacing()[1]);
 
     image.SetPixelFormat(pf);
-    gdcm::PhotometricInterpretation pi = gdcm::PhotometricInterpretation::RGB;
-    image.SetPhotometricInterpretation(pi);
+    image.SetPhotometricInterpretation(gdcm::PhotometricInterpretation::RGB);
     image.SetTransferSyntax(gdcm::TransferSyntax::ExplicitVRLittleEndian);
     // copy the DICOM tags over from inputImage to image
     gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
@@ -786,7 +840,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
     // set image type to derived
     gdcm::Attribute<0x0008, 0x0008> at_image_type;
-    static const gdcm::CSComp values[] = {"DERIVED","SECONDARY"};
+    static const gdcm::CSComp values[] = {"DERIVED","SECONDARY","OTHER"};
     at_image_type.SetValues( values, 2, true ); // true => copy data !
     if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
       const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
@@ -794,6 +848,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
       // Make sure that value #1 is at least 'DERIVED', so override in all cases:
       at_image_type.SetValue( 0, values[0] );
       at_image_type.SetValue( 1, values[1] );
+      at_image_type.SetValue( 2, values[2] );
     }
     ds.Replace( at_image_type.GetAsDataElement() );
 
@@ -891,7 +946,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 }
 
 
-CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImageType3D::Pointer maskImage) {
+CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImageType3D::Pointer maskImage, OverlayInfos_t *overlayInfo) {
 
   // create the output fused image
   using CPixelType = itk::RGBPixel<unsigned char>;
@@ -901,7 +956,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   CImageType3D::RegionType fusedRegion = inputImage->GetLargestPossibleRegion();
   fused->SetRegions(fusedRegion);
   fused->Allocate();
-  fused->FillBuffer(itk::NumericTraits<CPixelType>::Zero);
+  fused->FillBuffer(itk::NumericTraits<CPixelType>::ZeroValue());
   fused->SetOrigin(inputImage->GetOrigin());
   fused->SetSpacing(inputImage->GetSpacing());
   fused->SetDirection(inputImage->GetDirection());
@@ -957,8 +1012,8 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   using HistogramType = HistogramGeneratorType::HistogramType;
   const HistogramType *histogram = histogramGenerator->GetOutput();
   // set in calling function
-  double lowerT = 0.01;
-  double upperT = 0.999;
+  double lowerT = overlayInfo->brightnessContrastLL; // 0.01;
+  double upperT = overlayInfo->brightnessContrastUL; // 0.999;
   double t1 = -1;
   double t2 = -1;
   double sum = 0;
@@ -1106,6 +1161,23 @@ int main(int argc, char *argv[]) {
   command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM. The redcap/ folder contains series folders with output.json files for REDCap imports.", MetaCommand::STRING, true);
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
 
+  command.SetOption("TitleText", "t", false, "Specify the title text on the report.");
+  command.SetOptionLongTag("TitleText", "title");
+  command.AddOptionField("TitleText", "title", MetaCommand::STRING, false);
+
+  command.SetOption("Info", "i", false, "Specify an info message that will appear in the report. This option can be used to identify the version/container used for creating the segmentation.");
+  command.SetOptionLongTag("Info", "info");
+  command.AddOptionField("Info", "info", MetaCommand::STRING, false);
+
+
+  command.SetOption("BrightnessContrastLL", "d", false, "Set threshold for brightness / contrast based on cummulative histogram lower limit (percentage dark pixel 0.01).");
+  command.SetOptionLongTag("BrightnessContrastLL", "brightness-contrast-ll");
+  command.AddOptionField("BrightnessContrastLL", "value", MetaCommand::FLOAT, false);
+
+  command.SetOption("BrightnessContrastUL", "b", false, "Set threshold for brightness / contrast based on cummulative histogram upper limit (percentage bright pixel 0.999).");
+  command.SetOptionLongTag("BrightnessContrastUL", "brightness-contrast-ul");
+  command.AddOptionField("BrightnessContrastUL", "value", MetaCommand::FLOAT, false);
+
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
@@ -1127,6 +1199,40 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  float brightness_contrast_ll = 0.01;
+  float brightness_contrast_ul = 0.999;
+  float brightnesscontrast_ll = brightness_contrast_ll;
+  float brightnesscontrast_ul = brightness_contrast_ul;
+  if (command.GetOptionWasSet("BrightnessContrastLL")) {
+    brightnesscontrast_ll = command.GetValueAsFloat("BrightnessContrastLL", "value");
+    if (brightnesscontrast_ll < 0 || brightnesscontrast_ll > 1.0) {
+      fprintf(stdout, "Warning: lower brightness values not between 0 and 1. Adjusted to 0.01.\n");
+      brightnesscontrast_ll = 0.01;
+    }
+  }
+  if (command.GetOptionWasSet("BrightnessContrastUL")) {
+    brightnesscontrast_ul = command.GetValueAsFloat("BrightnessContrastUL", "value");
+    if (brightnesscontrast_ul < 0 || brightnesscontrast_ul > 1.0) {
+      fprintf(stdout, "Warning: upper brightness values not between 0 and 1. Adjusted to 0.999.\n");
+      brightnesscontrast_ul = 0.999;
+    }
+  }
+  if (brightnesscontrast_ul < brightnesscontrast_ll) {
+    float tmp = brightnesscontrast_ll;
+    brightnesscontrast_ll = brightnesscontrast_ul;
+    brightnesscontrast_ul = tmp;
+  }
+  brightness_contrast_ll = brightnesscontrast_ll;
+  brightness_contrast_ul = brightnesscontrast_ul;
+  if (verbose) {
+    fprintf(stdout, "create report with brightness/contrast settings %.03f %.03f\n", brightness_contrast_ll, brightness_contrast_ul);
+  }
+
+  std::string infoMessage = command.GetValueAsString("Info", "info");
+  std::string titleText = command.GetValueAsString("TitleText", "title");
+
+  OverlayInfos_t overlayInfos = {titleText, infoMessage, brightness_contrast_ll,  brightness_contrast_ul};
+
   MaskImageType3D::Pointer maskImage = readMaskImageSerie(mask);
   if (maskImage == nullptr) {
     std::cerr << "Could not read mask image series from: " << mask << std::endl;
@@ -1139,13 +1245,13 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   } 
 
-  CImageType::Pointer fusedImage = computeFusedImage(inputImage, maskImage);
+  CImageType::Pointer fusedImage = computeFusedImage(inputImage, maskImage, &overlayInfos);
   if (fusedImage == nullptr) {
     std::cerr << "Could not compute fused image!" << std::endl;
     return EXIT_FAILURE;
   } 
 
-  saveFusedImageSeries(fusedImage, output, input);
+  saveFusedImageSeries(fusedImage, output, input, &overlayInfos);
 
   return EXIT_SUCCESS;  
 
