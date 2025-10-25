@@ -841,7 +841,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     // set image type to derived
     gdcm::Attribute<0x0008, 0x0008> at_image_type;
     static const gdcm::CSComp values[] = {"DERIVED","SECONDARY","OTHER"};
-    at_image_type.SetValues( values, 2, true ); // true => copy data !
+    at_image_type.SetValues( values, 3, true ); // true => copy data !
     if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
       const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
       //at_image_type.SetFromDataElement( de );
@@ -1159,6 +1159,11 @@ int main(int argc, char *argv[]) {
   command.AddField("indir", "Directory with input DICOM image series.", MetaCommand::STRING, true);
   command.AddField("maskdir", "Directory with input mask DICOM series (0 - background, 1 - foreground).", MetaCommand::STRING, true);
   command.AddField("outdir", "Directory for images/, labels/, fused/, and reports/ folder as DICOM. The redcap/ folder contains series folders with output.json files for REDCap imports.", MetaCommand::STRING, true);
+
+  command.SetOption(
+    "UIDFixed", "u", false,
+    "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
+    "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
 
   command.SetOption("TitleText", "t", false, "Specify the title text on the fused image.");
