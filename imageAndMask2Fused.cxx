@@ -622,6 +622,9 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
       newFusedSOPInstanceUID = std::string(uid.Generate());
     }
 
+    std::string seriesNumberStr("");
+    itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0011", seriesNumberStr);
+
     std::string patientID("");
     itk::ExposeMetaData<std::string>(dictionarySlice, "0010|0020", patientID);
 
@@ -671,6 +674,18 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
     std::string studyDescription;
     itk::ExposeMetaData<std::string>(dictionarySlice, "0008|1030", studyDescription);
+
+    std::string referringPhysicianName;
+    itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0090", referringPhysicianName);
+
+    std::string institutionName;
+    itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0080", institutionName);
+
+    std::string modality;
+    itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0060", modality);
+    if (modality == "") {
+      modality = "OT"; // other
+    }
 
     if (stableUIDs) {
       itk::ExposeMetaData<std::string>(dictionarySlice, "0020|000e", newFusedSeriesInstanceUID);
@@ -750,7 +765,11 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     auto itr = dictionaryIn.Begin();
     auto end = dictionaryIn.End();
 
-    int seriesNumber;
+    int seriesNumber = 0;
+    // use the serieNumberStr to set the new series number
+    if (seriesNumberStr != "") {
+      seriesNumber = atoi(seriesNumberStr.c_str());
+    }
 
     while (itr != end) {
       itk::MetaDataObjectBase::Pointer entry = itr->second;
@@ -806,7 +825,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     ds.Replace(at1.GetAsDataElement());
 
     gdcm::Attribute<0x0008, 0x0060> at2; // Derivative Description
-    at2.SetValue("MR");
+    at2.SetValue(modality);
     ds.Replace(at2.GetAsDataElement());
 
     gdcm::Attribute<0x0020, 0x000E> at3;
@@ -915,6 +934,14 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
       at18.SetValue(mbstr);
       ds.Replace(at18.GetAsDataElement());
     }
+
+    gdcm::Attribute<0x0008, 0x0090> at19;
+    at19.SetValue(referringPhysicianName.c_str());
+    ds.Replace(at19.GetAsDataElement());
+
+    gdcm::Attribute<0x0008, 0x0080> at20;
+    at20.SetValue(institutionName.c_str());
+    ds.Replace(at20.GetAsDataElement());
 
     boost::filesystem::path p(filenames[sliceNr]);
     std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
