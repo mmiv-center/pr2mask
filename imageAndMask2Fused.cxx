@@ -478,7 +478,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
   }
 
   int kw = kregion.GetSize()[0];
-  int barHeight = std::max<int>(12, 0.07 * kw);
+  int barHeight = std::max<int>(26, 0.07 * kw);
   int fontSize = std::max<int>(6, 0.012 * kw);
   addBar(fusedImage, barHeight);
   addToReportGen(kbuffer, font_file, fontSize, overlayInfo->title, 8, -22, 0);
