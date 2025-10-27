@@ -139,7 +139,7 @@ generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapT
   keyImage->SetRegions(region);
 
   keyImage->Allocate();
-  keyImage->FillBuffer(itk::NumericTraits<CPixelType>::Zero);
+  keyImage->FillBuffer(itk::NumericTraits<CPixelType>::ZeroValue());
 
   RegionType outputRegion = keyImage->GetLargestPossibleRegion();
   //itk::ImageRegionIteratorWithIndex<CImageType> outputRGBIterator(keyImage, outputRegion);
@@ -707,7 +707,7 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   keyImage->SetRegions(region);
 
   keyImage->Allocate();
-  keyImage->FillBuffer(itk::NumericTraits<CPixelType>::Zero);
+  keyImage->FillBuffer(itk::NumericTraits<CPixelType>::ZeroValue());
 
   //
   // for each label compute the center of mass for a spline function
@@ -1207,7 +1207,7 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   CImageType::RegionType fusedRegion = im2change->GetLargestPossibleRegion();
   fused->SetRegions(fusedRegion);
   fused->Allocate();
-  fused->FillBuffer(itk::NumericTraits<CPixelType>::Zero);
+  fused->FillBuffer(itk::NumericTraits<CPixelType>::ZeroValue());
   fused->SetOrigin(im2change->GetOrigin());
   fused->SetSpacing(im2change->GetSpacing());
   fused->SetDirection(im2change->GetDirection());
@@ -3313,7 +3313,7 @@ int main(int argc, char *argv[]) {
           resultJSON["measures"] = json::array();
         }
         std::vector< std::map<std::string, std::string> >::iterator iter = report->measures.begin();
-        for(iter; iter < report->measures.end(); iter++) {
+        for (; iter < report->measures.end(); iter++) {
           resultJSON["measures"].push_back(*iter);
         }
         if (!resultJSON.contains("meta-data")) {
@@ -3371,7 +3371,7 @@ int main(int argc, char *argv[]) {
           create_directories(output_out.parent_path());
         }
         std::ofstream out2(output_out.c_str());
-        std::string res2 = redcap.dump(4) + "\n";
+        std::string res2 = redcap.dump(4, ' ', false, json::error_handler_t::replace) + "\n";
         out2 << res2;
         out2.close();
 
@@ -3379,7 +3379,7 @@ int main(int argc, char *argv[]) {
         boost::posix_time::ptime timeLocalEnd = boost::posix_time::microsec_clock::local_time();
         boost::posix_time::time_period tp(timeLocal, timeLocalEnd);
         resultJSON["wall_time"] = boost::posix_time::to_simple_string(timeLocalEnd - timeLocal);
-        std::string res = resultJSON.dump(4) + "\n";
+        std::string res = resultJSON.dump(4, ' ', false, json::error_handler_t::replace) + "\n";
         // save the json information to a file as well, use folder names
         boost::filesystem::path json_out = output + boost::filesystem::path::preferred_separator + seriesIdentifier + "_" + newSeriesInstanceUID + ".json";
         std::ofstream out(json_out.c_str());
@@ -3467,7 +3467,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (verbose) {
-    std::string res = resultJSON.dump(4) + "\n";
+    std::string res = resultJSON.dump(4, ' ', false, json::error_handler_t::replace) + "\n";
     fprintf(stdout, "%s", res.c_str());
   }
 
