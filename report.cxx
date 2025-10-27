@@ -820,8 +820,8 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
           }
         }
 
-        // un-changeable text "Not for clinical use"
-        addToReportGen(kbuffer, font_file, fontSize/2, "For Research Use Only – Not for use in diagnostic procedures.", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
+        // un-changeable text "Not for clinical use".   For Research Use Only – Not for use in diagnostic procedures.
+        addToReportGen(kbuffer, font_file, fontSize/2, "Image and measures are AI-generated and must be verified by a radiologist before clinical use", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
       } else {
         addToReportGen(kbuffer, font_file, fontSize/2, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
       }

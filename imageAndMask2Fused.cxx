@@ -64,6 +64,7 @@ unsigned char **image_buffer_gen = NULL;
 
 typedef struct {
   std::string title;
+  std::string subtitle;
   std::string info;
   float brightnessContrastLL;
   float brightnessContrastUL;
@@ -479,9 +480,10 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
   int kw = kregion.GetSize()[0];
   int barHeight = std::max<int>(26, 0.07 * kw);
-  int fontSize = std::max<int>(6, 0.012 * kw);
+  int fontSize = std::max<int>(4, 0.012 * kw);
   addBar(fusedImage, barHeight);
-  addToReportGen(kbuffer, font_file, fontSize, overlayInfo->title, 8, -22, 0);
+  addToReportGen(kbuffer, font_file, fontSize+2, overlayInfo->title, 8, -22, 0);
+  addToReportGen(kbuffer, font_file, fontSize, overlayInfo->subtitle, 8, 0, 0);
   addToReportGen(kbuffer, font_file, fontSize, overlayInfo->info, 5, KHEIGHT-50, 0);
 
   using ImageSizeType = typename CImageType::SizeType;
@@ -1197,6 +1199,10 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("TitleText", "title");
   command.AddOptionField("TitleText", "title", MetaCommand::STRING, false);
 
+  command.SetOption("SubTitleText", "s", false, "Specify a sub-title text for version information.");
+  command.SetOptionLongTag("SubTitleText", "subtitle");
+  command.AddOptionField("SubTitleText", "subtitle", MetaCommand::STRING, false);
+
   command.SetOption("Info", "i", false, "Specify an info message that will appear in the bottom left corner. This option can be used to identify the version/container used for creating the segmentation.");
   command.SetOptionLongTag("Info", "info");
   command.AddOptionField("Info", "info", MetaCommand::STRING, false);
@@ -1262,8 +1268,14 @@ int main(int argc, char *argv[]) {
 
   std::string infoMessage = command.GetValueAsString("Info", "info");
   std::string titleText = command.GetValueAsString("TitleText", "title");
+  std::string subTitleText = command.GetValueAsString("SubTitleText", "subtitle");
 
-  OverlayInfos_t overlayInfos = {titleText, infoMessage, brightness_contrast_ll,  brightness_contrast_ul};
+  if (infoMessage == "") {
+    // set default subtitle text
+    infoMessage = std::string("For Research Use Only - Not for use in diagnostic procedures.");
+  }
+
+  OverlayInfos_t overlayInfos = {titleText, subTitleText, infoMessage, brightness_contrast_ll,  brightness_contrast_ul};
 
   MaskImageType3D::Pointer maskImage = readMaskImageSerie(mask);
   if (maskImage == nullptr) {
