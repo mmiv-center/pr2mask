@@ -24,7 +24,7 @@ static inline std::string rtrim_copy(std::string s) {
   return s;
 }
 
-/*
+
 // I am not sure why I need this..  its defined in dsrtnant.cc and dsrdoctn.cc
 // only required on macos right now
 OFBool operator==(const DSRDocumentTreeNode &lhs,
@@ -52,16 +52,18 @@ OFBool operator!=(const DSRTreeNodeAnnotation &lhs,
                   const DSRTreeNodeAnnotation &rhs)
 {
     return lhs.isNotEqual(rhs);
-} */
+} 
 
 // forward declarations
 static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &report);
+
+std::string versionString;
 
 int main(int argc, char *argv[]) {
     setlocale(LC_NUMERIC, "en_US.utf-8");
 
     boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
-    std::string versionString = std::string("0.0.1.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+    versionString = std::string("0.0.1.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
 
     namespace po = boost::program_options;
     po::options_description desc("Convert JSON created by imageAndMask2Report into DICOM-SR.\nUsage: <program> [options] <json-input-file>\n\nAllowed options");
@@ -183,6 +185,8 @@ int main(int argc, char *argv[]) {
                         std::string InstitutionName = meta[0]["InstitutionName"];
                         dataset->putAndInsertString(DCM_InstitutionName, InstitutionName.c_str());
                     } 
+                    // add the version number as DCM_SoftwareVersions
+                    std::string v = std::string("json2SR ") + versionString;
 
                     std::cout << "Write: " << outputFilename << "..." << OFendl;
                     OFString filename(outputFilename.c_str());
@@ -294,13 +298,13 @@ static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &re
 
     doc->getTree().addContentItem(DSRTypes::RT_contains, DSRTypes::VT_Text);
     doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("CODE_28", MMIV_CODING_SCHEME_DESIGNATOR, "AI Assessment"));
-    doc->getTree().getCurrentContentItem().setStringValue("This report was generated on the research information system Helse Vest.");
+    doc->getTree().getCurrentContentItem().setStringValue("This report was generated using technology created by MMIV. It contains quantitative measures extracted from medical images using AI-based image analysis algorithms. This report is not for clinical use. All measures need to be reviewed by a radiologist.");
     //doc->getTree().goUp();
 
     // TODO: measures, not just the first one into the SR
     // walk through all the measures we find in the report
     doc->getTree().addContentItem(DSRTypes::RT_isRoot, DSRTypes::VT_Container);
-    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", MMIV_CODING_SCHEME_DESIGNATOR, "MMIV Measures"));
+    doc->getTree().getCurrentContentItem().setConceptName(DSRCodedEntryValue("DT.01", MMIV_CODING_SCHEME_DESIGNATOR, "MMIV Radiomics Measures"));
 
     if (measures.is_array() && measures.size() > 0) {
         for (int msid = 0; msid < measures.size(); msid++) {
