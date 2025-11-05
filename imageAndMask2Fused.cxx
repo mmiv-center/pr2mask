@@ -876,19 +876,24 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     ds.Replace( at_image_type.GetAsDataElement() );
 
     // software version
+    std::string AIVersion("AI version: ");
+    if (const char *env_p = std::getenv("VERSION")) { // part of the Dockerfile for building this application
+      AIVersion += std::string(env_p);
+    }
     std::string ContainerVersion("container version: ");
     if (const char *env_p = std::getenv("CONTAINER_VERSION")) { // part of the Dockerfile for building this application
       ContainerVersion += std::string(env_p);
     }
     gdcm::Attribute<0x0018, 0x1020> at_software_version;
-    static const gdcm::LOComp version_values[] = {(std::string("imageAndMask2Fused ") + versionString).c_str(), ContainerVersion.c_str()};
-    at_software_version.SetValues( version_values, 2, true ); // true => copy data !
+    static const gdcm::LOComp version_values[] = {(std::string("imageAndMask2Fused ") + versionString).c_str(), ContainerVersion.c_str(), AIVersion.c_str()};
+    at_software_version.SetValues( version_values, 3, true ); // true => copy data !
     if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
       const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
       //at_image_type.SetFromDataElement( de );
       // Make sure that value #1 is at least 'DERIVED', so override in all cases:
       at_software_version.SetValue( 0, version_values[0] );
       at_software_version.SetValue( 1, version_values[1] );
+      at_software_version.SetValue( 2, version_values[2] );
     }
     ds.Replace( at_software_version.GetAsDataElement() );
 
