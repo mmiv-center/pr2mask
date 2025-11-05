@@ -45,6 +45,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+std::string versionString;
+
 typedef signed short PixelType;
 
 // input image and mask
@@ -873,6 +875,23 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     }
     ds.Replace( at_image_type.GetAsDataElement() );
 
+    // software version
+    std::string ContainerVersion("container version: ");
+    if (const char *env_p = std::getenv("CONTAINER_VERSION")) { // part of the Dockerfile for building this application
+      ContainerVersion += std::string(env_p);
+    }
+    gdcm::Attribute<0x0018, 0x1020> at_software_version;
+    static const gdcm::LOComp version_values[] = {(std::string("imageAndMask2Fused ") + versionString).c_str(), ContainerVersion.c_str()};
+    at_software_version.SetValues( version_values, 2, true ); // true => copy data !
+    if ( ds.FindDataElement( at_image_type.GetTag() ) ) {
+      const gdcm::DataElement &de = ds.GetDataElement( at_image_type.GetTag() );
+      //at_image_type.SetFromDataElement( de );
+      // Make sure that value #1 is at least 'DERIVED', so override in all cases:
+      at_software_version.SetValue( 0, version_values[0] );
+      at_software_version.SetValue( 1, version_values[1] );
+    }
+    ds.Replace( at_software_version.GetAsDataElement() );
+
     // image position patient from input
     // These values are actually not getting written to the files (RGB has no origin, values are 0\0\0, but see set origin further down)
     gdcm::Attribute<0x0020, 0x0032> at7;
@@ -1180,7 +1199,7 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  std::string versionString = std::string("0.0.1.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  versionString = std::string("0.0.1.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
   command.SetVersion(versionString.c_str());
   command.SetDate(to_simple_string(timeLocal).c_str());
   command.SetDescription("ImageAndMask2Fused: Creates a fused image series from image and mask pair (DICOM format).");
