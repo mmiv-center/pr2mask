@@ -15,7 +15,9 @@
 
 typedef struct {
   std::string filename;
-  std::string VersionString; // provided by the user on the command line
+  std::string VersionString; // provided by the user on the command line, version of the AI
+  std::string pr2maskVersionString; // the version of pr2mask used to generate the report images
+  std::string ContainerVersionString; // the version of the docker container used on DTS (CONTAINER_VERSION env variable)
   std::string PatientName;
   std::string PatientID;
   std::string SOPInstanceUID; // 64chars max

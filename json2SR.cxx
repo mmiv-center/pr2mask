@@ -187,6 +187,7 @@ int main(int argc, char *argv[]) {
                     } 
                     // add the version number as DCM_SoftwareVersions
                     std::string v = std::string("json2SR ") + versionString;
+                    dataset->putAndInsertString(DCM_SoftwareVersions, v.c_str());
 
                     std::cout << "Write: " << outputFilename << "..." << OFendl;
                     OFString filename(outputFilename.c_str());

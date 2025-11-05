@@ -93,6 +93,8 @@ Report *getDefaultReportStruct() {
   report->key_fact = std::string("");
   report->key_unit = std::string("");
   report->VersionString = std::string("");
+  report->pr2maskVersionString = std::string("");
+  report->ContainerVersionString = std::string("");   // this version string comes from an environment variable
   report->TitleText = std::string("MMIV.no report. Made with AI");
   report->TextTopRight = std::string("");
   report->TextTopRightLabels = std::map<int, std::string>();
@@ -932,6 +934,11 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
     anon.Replace(gdcm::Tag(0x0018, 0x1012), DateOfSecondaryCapture.c_str());
     anon.Replace(gdcm::Tag(0x0018, 0x1014), TimeOfSecondaryCapture.c_str());
     anon.Replace(gdcm::Tag(0x0018, 0x1016), std::string("pr2mask").c_str());
+    // create a software version string that contains the AI version, the version of pr2mask and the version of DTS
+    std::string v = std::string("AI ") + report->VersionString + 
+                    std::string("\\pr2mask ") + report->pr2maskVersionString +
+                    std::string("\\container ") + report->ContainerVersionString;
+    anon.Replace(gdcm::Tag(0x0018, 0x1020), v.c_str());
     anon.Replace(gdcm::Tag(0x0020, 0x4000), std::string("Region of interest shape, intensity and texture measures").c_str());
 
     gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
