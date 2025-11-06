@@ -27,7 +27,7 @@ static inline std::string rtrim_copy(std::string s) {
 
 // I am not sure why I need this..  its defined in dsrtnant.cc and dsrdoctn.cc
 // only required on macos right now
-OFBool operator==(const DSRDocumentTreeNode &lhs,
+/*OFBool operator==(const DSRDocumentTreeNode &lhs,
                   const DSRDocumentTreeNode &rhs)
 {
     return lhs.isEqual(rhs);
@@ -52,7 +52,7 @@ OFBool operator!=(const DSRTreeNodeAnnotation &lhs,
                   const DSRTreeNodeAnnotation &rhs)
 {
     return lhs.isNotEqual(rhs);
-} 
+    } */
 
 // forward declarations
 static void generate(DSRDocument *doc, OFString &studyUID_01, nlohmann::json &report);
