@@ -3070,7 +3070,8 @@ int main(int argc, char *argv[]) {
           float intersliceThickness = 0;
 
           // create a fused image using the mask in binaryErode->GetOutput()
-          if (1) {
+          // use the imageAndMask2Fused executable instead - it will not do a connected component analysis and it will work in 3D
+          if (0) {
             if (uidFixedFlag) {
               std::string derivedFusedSeriesInstanceUID(seriesIdentifier);
               std::string endString = ".3";
@@ -3179,7 +3180,7 @@ int main(int argc, char *argv[]) {
           }
           ds.Replace( at_image_type.GetAsDataElement() );
 */
-          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0008", std::string("DERIVED\\SECONDARY"));
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0008", std::string("DERIVED\\SECONDARY\\OTHER"));
 
           // set the series description (max 64 characters)
           if (seriesDescription != "")
