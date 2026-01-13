@@ -243,7 +243,7 @@ void PolylineMask2DScanlineImageFilter<TInputImage, TPolyline, TOutputImage>::Ge
     PT floatIndexA;
     outputImagePtr->TransformIndexToPhysicalPoint(indexA, floatIndexA); // hope that is in the middle of the pixel now
     floatIndexA[0] -= halfAPixelDirX;                                   // half a pixel in x direction
-    floatIndexA[1] -= halfAPixelDirY / 4;                               // prevent intersections at end points
+    floatIndexA[1] -= halfAPixelDirY;                                    // half a pixel in y direction
     // fprintf(stderr, " POINT TO FLOAT: %ld %ld %f %f\n", indexA[0], indexA[1], floatIndexA[0], floatIndexA[1]);
     //  auto indexA2 = outputImagePtr->TransformPhysicalPointToContinuousIndex(tmpVertex);
     ++imitLine;
@@ -257,7 +257,7 @@ void PolylineMask2DScanlineImageFilter<TInputImage, TPolyline, TOutputImage>::Ge
       PT floatIndexB;
       outputImagePtr->TransformIndexToPhysicalPoint(indexB, floatIndexB); // hope that is in the middle of the pixel now
       floatIndexB[0] -= halfAPixelDirX;
-      floatIndexB[1] -= halfAPixelDirY / 4;
+      floatIndexB[1] -= halfAPixelDirY;
       // we have now a tiny line between indexA and indexB
       // now we can check the intersection with all the lines we have in the polygon
       tmpVertexA = container->ElementAt(0);
