@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cmath>
 #include "itkGDCMImageIO.h"
 #include "itkGDCMSeriesFileNames.h"
 #include "itkImageFileWriter.h"
@@ -1029,8 +1030,8 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
     for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
       VertexType v0;
       // coordinates are in pixel, we need coordinates based on the bounding box
-      int x = storage[storageIdx].coords[j];
-      int y = storage[storageIdx].coords[j + 1];
+      int x = static_cast<int>(std::round(storage[storageIdx].coords[j]));
+      int y = static_cast<int>(std::round(storage[storageIdx].coords[j + 1]));
       // limit the coordinates in pixel to the bounding box
       if (x < 0)
         x = 0;
