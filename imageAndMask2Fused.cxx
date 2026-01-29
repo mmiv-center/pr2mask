@@ -70,12 +70,17 @@ typedef struct {
   std::string info;
   float brightnessContrastLL;
   float brightnessContrastUL;
+  bool  votemapMode;
+  float votemapMax;
+  float votemapAgree;
 } OverlayInfos_t;
 
 bool verbose = false;
 bool stableUIDs = true;
 
 std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
+// only three colors for background, low agreement and high agreement
+std::vector<std::vector<float>> labelColorsVotemap = {{0, 0, 0}, {255,255,0}, {0,0,255} };
 
 // read mask image series
 ImageType3D::Pointer readImageSerie(std::string dirName) {
@@ -1114,20 +1119,52 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   blue_channel->SetSpacing(inputImage->GetSpacing());
   blue_channel->SetDirection(inputImage->GetDirection());
 
-  for (unsigned int n_idx = 0; n_idx < labelMap->GetNumberOfLabelObjects(); n_idx++) {
-    unsigned int n = n_idx;
-    ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
-    int label = labelObject->GetLabel(); // it might be that all regions have the same label and only n is a good choice for the color
+  // we have two modes, either Votemap mode or color by regions of interest
+  if (overlayInfo->votemapMode) {
+    itk::ImageRegionIterator<MaskImageType3D> maskIterator(maskImage, fusedRegion);
+    maskIterator.GoToBegin();
+    itk::ImageRegionIterator<FloatImageType> redSIterator(red_channel, fusedRegion);
+    itk::ImageRegionIterator<FloatImageType> greenSIterator(green_channel, fusedRegion);
+    itk::ImageRegionIterator<FloatImageType> blueSIterator(blue_channel, fusedRegion);
+    redSIterator.GoToBegin();
+    greenSIterator.GoToBegin();
+    blueSIterator.GoToBegin();
+    while (!maskIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
+      unsigned short maskValue = maskIterator.Get();
+      std::vector<float> col;
+      if (maskValue > 0) {
+        if (maskValue >= overlayInfo->votemapMax) {
+          col = labelColorsVotemap[2];
+        } else {
+          col = labelColorsVotemap[1];
+        }
+      } else {
+          col = labelColorsVotemap[0];
+      }
+      redSIterator.Set(col[0]/255.0f);
+      greenSIterator.Set(col[1]/255.0f);
+      blueSIterator.Set(col[2]/255.0f);
+      ++maskIterator;
+      ++redSIterator;
+      ++greenSIterator;
+      ++blueSIterator;
+    }
+  } else {
+    for (unsigned int n_idx = 0; n_idx < labelMap->GetNumberOfLabelObjects(); n_idx++) {
+      unsigned int n = n_idx;
+      ShapeLabelObjectType *labelObject = labelMap->GetNthLabelObject(n); // the label number is the connected component number - not the one label as mask
+      int label = labelObject->GetLabel(); // it might be that all regions have the same label and only n is a good choice for the color
 
-    // color is
-    std::vector<float> col = labelColors2[ (label % (labelColors2.size()-1)) +1 ];
-    itk::Index<3U> index;
-    for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
-      index = labelObject->GetIndex(pixelId);
-      // set this position in all three color images, values are between 0 and 1
-      red_channel->SetPixel(index, col[0]/255.0); 
-      green_channel->SetPixel(index, col[1]/255.0);
-      blue_channel->SetPixel(index, col[2]/255.0);
+      // color is
+      std::vector<float> col = labelColors2[ (label % (labelColors2.size()-1)) +1 ];
+      itk::Index<3U> index;
+      for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+        index = labelObject->GetIndex(pixelId);
+        // set this position in all three color images, values are between 0 and 1
+        red_channel->SetPixel(index, col[0]/255.0); 
+        green_channel->SetPixel(index, col[1]/255.0);
+        blue_channel->SetPixel(index, col[2]/255.0);
+      }
     }
   }
 
@@ -1231,6 +1268,13 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("Info", "info");
   command.AddOptionField("Info", "info", MetaCommand::STRING, false);
 
+  command.SetOption("VotemapMax", "o", false, "Enable votemap display for overlapping regions of interest. The provided mask volume is assumed to be of a votemap type. The provided value should be the maximum agreement value possible.");
+  command.SetOptionLongTag("VotemapMax", "votemapmax");
+  command.AddOptionField("VotemapMax", "votemapmax", MetaCommand::FLOAT, false);
+
+  command.SetOption("VotemapAgree", "a", false, "If vote map mode is enabled (see VotemapMax) you can specify a level for disagreement relative to the VotemapMax (in percent). A value of >= 0.75 for a VotemapMax value of 5 would color voxel in the overlay blue if the votemap is larger than 4 and yellow otherwise. Only values of 0 in the vote map are displayed with a transparent overlay.");
+  command.SetOptionLongTag("VotemapAgree", "votemapagree");
+  command.AddOptionField("VotemapAgree", "votemapagree", MetaCommand::FLOAT, false, "0.75");
 
   command.SetOption("BrightnessContrastLL", "d", false, "Set threshold for brightness / contrast based on cummulative histogram lower limit (percentage dark pixel 0.01).");
   command.SetOptionLongTag("BrightnessContrastLL", "brightness-contrast-ll");
@@ -1261,6 +1305,20 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  float votemapMax = 0.0;
+  bool votemapMode = false;
+  if (command.GetOptionWasSet("VotemapMax")) {
+    votemapMax = command.GetValueAsFloat("VotemapMax", "votemapmax");
+    votemapMode = true;
+  }
+  float votemapAgree = 0.75;
+  if (command.GetOptionWasSet("VotemapAgree")) {
+    votemapAgree = command.GetValueAsFloat("VotemapAgree", "votemapagree");
+    if (votemapAgree < 0 || votemapAgree > 1.0) {
+      votemapAgree = std::min<float>(std::max<float>(0.0, votemapAgree), 1.0);
+      fprintf(stdout, "Warning: votemap agree value not between 0 and 1. Adjusted to %f.\n", votemapAgree);
+    }
+  }
   float brightness_contrast_ll = 0.01;
   float brightness_contrast_ul = 0.999;
   float brightnesscontrast_ll = brightness_contrast_ll;
@@ -1299,7 +1357,7 @@ int main(int argc, char *argv[]) {
     infoMessage = std::string("For Research Use Only - Not for use in diagnostic procedures.");
   }
 
-  OverlayInfos_t overlayInfos = {titleText, subTitleText, infoMessage, brightness_contrast_ll,  brightness_contrast_ul};
+  OverlayInfos_t overlayInfos = {titleText, subTitleText, infoMessage, brightness_contrast_ll,  brightness_contrast_ul, votemapMode, votemapMax, votemapAgree};
 
   MaskImageType3D::Pointer maskImage = readMaskImageSerie(mask);
   if (maskImage == nullptr) {
