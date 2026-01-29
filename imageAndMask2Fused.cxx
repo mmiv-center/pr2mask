@@ -830,7 +830,11 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     ds.Replace(at1_5.GetAsDataElement());
 
     gdcm::Attribute<0x0008, 0x2111> at1; // Derivative Description
-    at1.SetValue("Fused Segmentation");
+    if (overlayInfo->votemapMode) {
+      at1.SetValue("Fused Vote Map, blue agree and yellow disagree");
+    } else {
+      at1.SetValue("Fused Segmentation");
+    }
     ds.Replace(at1.GetAsDataElement());
 
     gdcm::Attribute<0x0008, 0x0060> at2; // Derivative Description
@@ -843,6 +847,9 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
     gdcm::Attribute<0x0008, 0x103E> at4;
     std::string extension = " (fused segmentation)";
+    if (overlayInfo->votemapMode) {
+      extension = " (fused vote map)";
+    }
     std::ostringstream value;
     value.str("");
     value << seriesDescription;
@@ -1122,10 +1129,10 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   // we have two modes, either Votemap mode or color by regions of interest
   if (overlayInfo->votemapMode) {
     itk::ImageRegionIterator<MaskImageType3D> maskIterator(maskImage, fusedRegion);
-    maskIterator.GoToBegin();
     itk::ImageRegionIterator<FloatImageType> redSIterator(red_channel, fusedRegion);
     itk::ImageRegionIterator<FloatImageType> greenSIterator(green_channel, fusedRegion);
     itk::ImageRegionIterator<FloatImageType> blueSIterator(blue_channel, fusedRegion);
+    maskIterator.GoToBegin();
     redSIterator.GoToBegin();
     greenSIterator.GoToBegin();
     blueSIterator.GoToBegin();
