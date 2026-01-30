@@ -71,8 +71,9 @@ typedef struct {
   float brightnessContrastLL;
   float brightnessContrastUL;
   bool  votemapMode;
-  float votemapMax;
-  float votemapAgree;
+  float votemapMax; // user provided possible max value for votemap
+  float votemapAgree; // blue to yellow border
+  float obtained_max_votemap_value; // calculate during fusing
 } OverlayInfos_t;
 
 bool verbose = false;
@@ -307,7 +308,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> convert;
   std::wstring stext = convert.from_bytes(sstext);
 
-  bool verbose = 1;
+  //bool verbose = 1;
   if (verbose) {
     fprintf(stdout, "  addToReportGen: \"%s\"\n", sstext.c_str());
   }
@@ -358,7 +359,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   }
 
   angle = radiants;
-  target_height = 512;
+  target_height = image_buffer_gen_size[1]; // 512; // shouldn't this be the height of the buffer, e.g. image_buffer_gen_size[1]?
 
   error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
 
@@ -489,9 +490,34 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
   int barHeight = std::max<int>(26, 0.07 * kw);
   int fontSize = std::max<int>(4, 0.012 * kw);
   addBar(fusedImage, barHeight);
-  addToReportGen(kbuffer, font_file, fontSize+2, overlayInfo->title, 8, -22, 0);
-  addToReportGen(kbuffer, font_file, fontSize, overlayInfo->subtitle, 8, 0, 0);
-  addToReportGen(kbuffer, font_file, fontSize, overlayInfo->info, 5, KHEIGHT-50, 0);
+  if (overlayInfo->votemapMode) {
+    // in vote map mode we have a possible placeholder for the max votemap value relative to the possible value
+    float maxObtainedVotemapValue = 100.0f * overlayInfo->obtained_max_votemap_value / overlayInfo->votemapMax;
+    char buff_str[256];
+    sprintf(buff_str, "%.0f%%", maxObtainedVotemapValue);
+    std::string maxObtainedVotemapValueStr = std::string(buff_str);
+    // replace the placeholder in all info strings
+    std::string placeholder = "{peak_agreement}";
+    size_t pos = overlayInfo->info.find(placeholder);
+    while (pos != std::string::npos) {
+      overlayInfo->info.replace(pos, placeholder.length(), maxObtainedVotemapValueStr);
+      pos = overlayInfo->info.find(placeholder, pos + 1);
+    }
+    pos = overlayInfo->subtitle.find(placeholder);
+    while (pos != std::string::npos) {
+      overlayInfo->subtitle.replace(pos, placeholder.length(), maxObtainedVotemapValueStr);
+      pos = overlayInfo->subtitle.find(placeholder, pos + 1);
+    }
+    pos = overlayInfo->title.find(placeholder);
+    while (pos != std::string::npos) {
+      overlayInfo->title.replace(pos, placeholder.length(), maxObtainedVotemapValueStr);
+      pos = overlayInfo->title.find(placeholder, pos + 1);
+    }
+  }
+
+  addToReportGen(kbuffer, font_file, (fontSize+2)<7?7:fontSize+2, overlayInfo->title, 8, -22, 0);
+  addToReportGen(kbuffer, font_file, (fontSize)<7?7:fontSize, overlayInfo->subtitle, 8, 20, 0);
+  addToReportGen(kbuffer, font_file, (fontSize)<7?7:fontSize, overlayInfo->info, 8, KHEIGHT-50, 0);
 
   using ImageSizeType = typename CImageType::SizeType;
   ImageSizeType regionSize;
@@ -983,7 +1009,12 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
     boost::filesystem::path p(filenames[sliceNr]);
     std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
-    boost::filesystem::path p_out = outputDir + boost::filesystem::path::preferred_separator + "fused" + boost::filesystem::path::preferred_separator +
+    std::string output_dir_name = "fused";
+    if (overlayInfo->votemapMode) {
+      output_dir_name = "fused_vote_map";
+    }
+
+    boost::filesystem::path p_out = outputDir + boost::filesystem::path::preferred_separator + output_dir_name + boost::filesystem::path::preferred_separator +
       newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + filename_without_extension.c_str() + ".dcm";
     if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
       // create the output directory
@@ -1051,6 +1082,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType3D, LabelMapType>;
   auto i2l = I2LType::New();
   i2l->SetInput(maskImage);
+  // not needed if we use the votemapmode
   i2l->Update();
   LabelMapType *labelMap = i2l->GetOutput();
   if (verbose) {
@@ -1128,6 +1160,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
 
   // we have two modes, either Votemap mode or color by regions of interest
   if (overlayInfo->votemapMode) {
+    overlayInfo->obtained_max_votemap_value = -1;
     itk::ImageRegionIterator<MaskImageType3D> maskIterator(maskImage, fusedRegion);
     itk::ImageRegionIterator<FloatImageType> redSIterator(red_channel, fusedRegion);
     itk::ImageRegionIterator<FloatImageType> greenSIterator(green_channel, fusedRegion);
@@ -1138,6 +1171,10 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
     blueSIterator.GoToBegin();
     while (!maskIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
       unsigned short maskValue = maskIterator.Get();
+      if (maskValue > overlayInfo->obtained_max_votemap_value) {
+        overlayInfo->obtained_max_votemap_value = maskValue;
+      }
+
       std::vector<float> col = labelColorsVotemap[0];
       if (maskValue > 0) {
         if (maskValue >= (overlayInfo->votemapAgree * overlayInfo->votemapMax)) {
