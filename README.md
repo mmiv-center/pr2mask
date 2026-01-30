@@ -194,6 +194,21 @@ As a last step we can use the generated mask and the original image series to cr
 
 The output folder /tmp/blarg/ will contain the output in multiple formats
 
+### Fused image series
+
+Fused image series display the map ontop of the image data in color. If you have a binary mask as an output this will create the fused images.
+
+```bash
+./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg -u -i "Fused mask"
+```
+
+If your algorithm creates a map that can be used to show the models confidence in the results you can use imageAndMask2Fused to create vote-map images. For example you can train 5 AI models with each 4/5th of the available training data. Summing up the individual binary masks (max value is 5) you create a vote-map.
+
+```bash
+./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg --votemapmax 5 --votemapagree 0.5 -u -i "Fused mask"
+```
+
+This would create a fused image series with a blue overlay where the vote map reached or exceeded a value of 0.5 * 5 = 2.5. All other voxel with a non-zero value would be displayed in a yellow overlay color.
 
 ## Build these modules
 
