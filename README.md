@@ -208,7 +208,17 @@ If your algorithm creates a map that can be used to show the models confidence i
 ./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg --votemapmax 5 --votemapagree 0.5 -u -i "Fused mask"
 ```
 
-This would create a fused image series with a blue overlay where the vote map reached or exceeded a value of 0.5 * 5 = 2.5. All other voxel with a non-zero value would be displayed in a yellow overlay color.
+This would create a fused image series with a blue overlay where the vote map reached or exceeded a value of 0.5 * 5 = 2.5. All other voxel with a non-zero value would be displayed in a yellow overlay color. It is useful to also provide information to the user on the maximum value realized in the current examination. You can use a placeholder that prints a percentage value obtained relative to the votemapmax value.
+
+```bash
+./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg \
+     --votemapmax 5 \
+     --votemapagree 0.5 \
+     -u \
+     -i "Fused mask" \
+     -s "reached agreement is {peak_agreement}"
+```
+
 
 ## Build these modules
 
