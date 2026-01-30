@@ -1198,13 +1198,18 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   itk::ImageRegionIterator<FloatImageType> blueSIterator(smoothBlue, fusedRegion);
   itk::ImageRegionIterator<ImageType3D> inputIterator(inputImage, fusedRegion);
   itk::ImageRegionIterator<CImageType3D> fusedIterator(fused, fusedRegion);
+  //itk::ImageRegionIterator<MaskImageType3D> maskIterator(maskImage, fusedRegion);
 
   inputIterator.GoToBegin();
   fusedIterator.GoToBegin();
   redSIterator.GoToBegin();
   greenSIterator.GoToBegin();
   blueSIterator.GoToBegin();
+  // maskIterator.GoToBegin();
   float f = 0.6; // weight of the underlay, at 0.1 only mask is visible
+  if (overlayInfo->votemapMode) {
+    f = 0.3; // in votemap mode we want to see more of the underlay
+  }
   float red, green, blue;
   while (!inputIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
     float scaledP = ((float) inputIterator.Get() - t1) / (t2 - t1);
@@ -1213,6 +1218,21 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
     red = redSIterator.Get();
     green = greenSIterator.Get();
     blue = blueSIterator.Get();
+
+    // only in votemap mode the alpha value is mask value dependent
+    /*if (overlayInfo->votemapMode) {
+      unsigned short maskValue = maskIterator.Get();
+      if (maskValue > 0) {
+        if (maskValue >= (overlayInfo->votemapAgree * overlayInfo->votemapMax)) {
+          f = 0.6; // col = labelColorsVotemap[2];
+        } else {
+          // a yellow region of uncertainty should be more visible, use a lower alpha value for the blending of the underlay
+          f = 0.3; // col = labelColorsVotemap[1];
+        }
+      } else {
+        f = 0.6; // default
+      }
+    }*/
 
     // alpha blend
     red = f * scaledP + red * (1 - f);
@@ -1232,7 +1252,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
     ++fusedIterator;
     ++redSIterator;
     ++greenSIterator;
-    ++blueSIterator;    
+    ++blueSIterator;
   }
   return fused;
 }
