@@ -1138,15 +1138,13 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
     blueSIterator.GoToBegin();
     while (!maskIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
       unsigned short maskValue = maskIterator.Get();
-      std::vector<float> col;
+      std::vector<float> col = labelColorsVotemap[0];
       if (maskValue > 0) {
-        if (maskValue >= overlayInfo->votemapMax) {
+        if (maskValue >= (overlayInfo->votemapAgree * overlayInfo->votemapMax)) {
           col = labelColorsVotemap[2];
         } else {
           col = labelColorsVotemap[1];
         }
-      } else {
-          col = labelColorsVotemap[0];
       }
       redSIterator.Set(col[0]/255.0f);
       greenSIterator.Set(col[1]/255.0f);
