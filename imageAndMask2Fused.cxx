@@ -88,6 +88,7 @@ ImageType3D::Pointer readImageSerie(std::string dirName) {
   using NamesGeneratorType = itk::GDCMSeriesFileNames;
   auto nameGenerator = NamesGeneratorType::New();
 
+  nameGenerator->SetRecursive(true);
   nameGenerator->SetUseSeriesDetails(true);
   nameGenerator->AddSeriesRestriction("0008|0021");
   nameGenerator->SetGlobalWarningDisplay(false);
@@ -160,6 +161,7 @@ MaskImageType3D::Pointer readMaskImageSerie(std::string dirName) {
     using NamesGeneratorType = itk::GDCMSeriesFileNames;
   auto nameGenerator = NamesGeneratorType::New();
 
+  nameGenerator->SetRecursive(true);
   nameGenerator->SetUseSeriesDetails(true);
   nameGenerator->AddSeriesRestriction("0008|0021");
   nameGenerator->SetGlobalWarningDisplay(false);
