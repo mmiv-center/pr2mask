@@ -216,9 +216,9 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
       break;
     }
   }
-  if (verbose) {
-    fprintf(stdout, "CumSum threshold [%.2f, %.2f]\n", t1, t2);
-  }
+  //if (verbose) {
+  //  fprintf(stdout, "CumSum threshold [%.2f, %.2f]\n", t1, t2);
+  //}
 
   std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 
@@ -1626,6 +1626,11 @@ int main(int argc, char *argv[]) {
   command.SetOption("NoBiomarker", "o", false, "Do not create biomarker to speed up mask processing");
   command.SetOptionLongTag("NoBiomarker", "nobiomarker");
 
+  // make dilation and erosion optional (default off)
+  command.SetOption("DilationErosion", "m", false, "Apply dilation followed by erosion to the created mask to close small holes and gaps");
+  command.SetOptionLongTag("DilationErosion", "dilation-erosion");
+  command.AddOptionField("DilationErosion", "value", MetaCommand::INT, false, "0");
+
   command.SetOption("BrightnessContrastLL", "d", false, "Set threshold for brightness / contrast based on cummulative histogram lower limit (percentage dark pixel 0.01).");
   command.SetOptionLongTag("BrightnessContrastLL", "brightness-contrast-ll");
   command.AddOptionField("BrightnessContrastLL", "value", MetaCommand::FLOAT, false);
@@ -1686,6 +1691,14 @@ int main(int argc, char *argv[]) {
   bool uidFixedFlag = false;
   if (command.GetOptionWasSet("UIDFixed"))
     uidFixedFlag = true;
+
+  int dilationErosionValue = 0;
+  if (command.GetOptionWasSet("DilationErosion")) {
+    dilationErosionValue = command.GetValueAsInt("DilationErosion", "value");
+    if (dilationErosionValue < 1) {
+      dilationErosionValue = 0;
+    }
+  }
 
   bool seriesIdentifierFlag = false;
   std::string input = command.GetValueAsString("indir");
@@ -2056,38 +2069,50 @@ int main(int argc, char *argv[]) {
           }
 
           // dilate and erode the im2change (mask) (would be better if we do this in 3D)
-          using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
-          using ErodeFilterType = itk::BinaryErodeImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
-          using DilateFilterType = itk::BinaryDilateImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
-          DilateFilterType::Pointer binaryDilate = DilateFilterType::New();
-          ErodeFilterType::Pointer binaryErode = ErodeFilterType::New();
+          ImageType2D::Pointer cleanMask = im2change;
+          if (dilationErosionValue > 0) {
+            //if (verbose) {
+            //  std::cout << "  Applying dilation and erosion with value: " << dilationErosionValue << std::endl;
+            //}
+            using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
+            using ErodeFilterType = itk::BinaryErodeImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
+            using DilateFilterType = itk::BinaryDilateImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
+            DilateFilterType::Pointer binaryDilate = DilateFilterType::New();
+            ErodeFilterType::Pointer binaryErode = ErodeFilterType::New();
 
-          StructuringElementType structuringElement;
-          structuringElement.SetRadius(1); // 3x3 structuring element
-          structuringElement.CreateStructuringElement();
-          binaryDilate->SetKernel(structuringElement);
-          binaryErode->SetKernel(structuringElement);
-          binaryErode->SetForegroundValue(1);
-          binaryErode->SetBackgroundValue(0);
-          binaryDilate->SetForegroundValue(1);
-          binaryDilate->SetBackgroundValue(0);
-          binaryDilate->SetInput(im2change);
-          binaryErode->SetInput(binaryDilate->GetOutput());
-          binaryDilate->SetDilateValue(1);
-          binaryErode->SetErodeValue(1);
+            StructuringElementType structuringElement;
+            structuringElement.SetRadius(dilationErosionValue); // 3x3 structuring element, should be 1 if smoothing is done
+            structuringElement.CreateStructuringElement();
+            binaryDilate->SetKernel(structuringElement);
+            binaryErode->SetKernel(structuringElement);
+            binaryErode->SetForegroundValue(1);
+            binaryErode->SetBackgroundValue(0);
+            binaryDilate->SetForegroundValue(1);
+            binaryDilate->SetBackgroundValue(0);
+            binaryDilate->SetInput(im2change);
+            binaryErode->SetInput(binaryDilate->GetOutput());
+            binaryDilate->SetDilateValue(1);
+            binaryErode->SetErodeValue(1);
 
-          try {
-            binaryErode->Update();
-          } catch (itk::ExceptionObject &err) {
-            std::cerr << "ExceptionObject caught !" << std::endl;
-            std::cerr << err << std::endl;
-            return EXIT_FAILURE;
-          }
+            try {
+              binaryErode->Update();
+            } catch (itk::ExceptionObject &err) {
+              std::cerr << "ExceptionObject caught !" << std::endl;
+              std::cerr << err << std::endl;
+              return EXIT_FAILURE;
+            }
+            cleanMask = binaryErode->GetOutput();
+          } //else {
+            //if (verbose) {
+            //  std::cout << "  No dilation and erosion applied." << std::endl;
+            //}
+          //}
           // per slice we should compute volumes here
           float intersliceThickness = 0;
 
           // create a fused image using the mask in binaryErode->GetOutput()
           if (1) {
+            // isn't this be done by imageAndMask2Fused? Can we disable it here? We just want the mask volume on its own in the mask output folder
             if (uidFixedFlag) {
               std::string derivedFusedSeriesInstanceUID(seriesIdentifier);
               std::string endString = ".3";
@@ -2129,13 +2154,13 @@ int main(int argc, char *argv[]) {
               create_directories(p_out.parent_path());
             }
             // it would be cool to add a filtered version of the labels as well, but that works only for a single label...  or?
-            writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
+            writeSecondaryCapture(cleanMask, fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
                                   newFusedSOPInstanceUID, verbose, brightness_contrast_ll, brightness_contrast_ul);
             // here is a good place to extract some measures from the masked image (mean, min, max, median, sum, intensity, histogram?)
           }
 
           // copy the values back to the im2change buffer
-          ImageType2D::Pointer cleanMask = binaryErode->GetOutput();
+          // ImageType2D::Pointer cleanMask = cleanMask;
           ImageType2D::PixelContainer *container3;
           container3 = cleanMask->GetPixelContainer();
           ImageType2D::PixelType *buffer4 = container3->GetBufferPointer();
