@@ -750,7 +750,8 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     const gdcm::Tag contributionDateTime(0x0018, 0xA002);     // ContributionDateTime
 
     gdcm::Attribute<0x0008, 0x0060> modalityAttr;
-    modalityAttr.Set(ds);
+    if (ds.FindDataElement( gdcm::Tag(0x0008, 0x0060)))
+      modalityAttr.Set(ds);
     if (std::string(modalityAttr.GetValue()) != std::string("PR")) { // PR's might reference these
       // we should create a cache here for the SeriesInstanceUID the ReferencedSOPInstanceUID might point to
       gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
