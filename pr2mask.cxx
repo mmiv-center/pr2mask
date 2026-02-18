@@ -63,6 +63,9 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp> 
+#include <boost/uuid/name_generator_sha1.hpp>
 #include <codecvt>
 #include <locale> // wstring_convert
 #include <map>
@@ -74,6 +77,37 @@ using json = nlohmann::json;
 using namespace boost::filesystem;
 
 json resultJSON;
+
+//
+// Generate a uuid for use as fixed id based on an input string
+// Example:
+//    std::string str_to_hash = SOPInstanceUID + uidFixedFlag + ".4";
+//    newFusedSOPInstanceUID = get_new_uuid(str_to_hash);
+//
+std::string get_new_uuid(const std::string& p_arg) {
+  static constexpr boost::uuids::uuid ns_id{}; // †null root, change as necessary
+  std::string as_uuid_str = boost::uuids::to_string(boost::uuids::name_generator_sha1{ns_id}(p_arg.data(), p_arg.size()));
+  // this is something like abcd-edfg-1234, convert to numeric only
+  std::string as_a_numeric = as_uuid_str;
+  boost::algorithm::replace_all(as_a_numeric, "-", ".");
+  boost::algorithm::replace_all(as_a_numeric, "a", "1");
+  boost::algorithm::replace_all(as_a_numeric, "b", "2");
+  boost::algorithm::replace_all(as_a_numeric, "c", "3");
+  boost::algorithm::replace_all(as_a_numeric, "d", "4");
+  boost::algorithm::replace_all(as_a_numeric, "e", "5");
+  boost::algorithm::replace_all(as_a_numeric, "f", "6");
+  // fix all bad uuids
+  boost::algorithm::replace_all(as_a_numeric, ".0", ".7");
+
+  std::string str_hash = std::string("1.3.6.1.4.1.45037") + std::string(".1") + as_a_numeric;
+  // restrict to max characters, don't allow a dot as last character
+  str_hash = str_hash.substr(0, 64);
+  if (str_hash.back() == '.') {
+    str_hash.back() = '8';
+  }
+  return str_hash;
+}
+
 
 // We need to identify for each series if they are a presentation state object and if we can extract some
 // contours from them.
@@ -92,7 +126,7 @@ struct Polygon {
 
 using ImageType2D = itk::Image<PixelType, 2>;
 
-void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, bool uidFixedFlag,
+void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, std::string uidFixedFlag,
                            std::string newFusedSeriesInstanceUID, std::string newFusedSOPInstanceUID, bool verbose, float lowerT, float upperT) {
 
   typedef itk::ImageFileReader<ImageType2D> ReaderType;
@@ -1597,7 +1631,7 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  std::string versionString = std::string("0.0.5.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  std::string versionString = std::string("0.0.6.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
   if (versionString.find("..") != std::string::npos)
     versionString.replace(versionString.find(".."), 2, ".");
   command.SetVersion(versionString.c_str());
@@ -1617,8 +1651,11 @@ int main(int argc, char *argv[]) {
   command.SetOption(
       "UIDFixed", "u", false,
       "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
-      "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
+      "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done."
+      " Set the value dependent on your algorithm and the generate output <AI_version>_01 etc.."
+  );
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
+  command.AddOptionField("UIDFixed", "value", MetaCommand::STRING, false);
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
@@ -1688,9 +1725,9 @@ int main(int argc, char *argv[]) {
   if (command.GetOptionWasSet("NoBiomarker"))
     biomarker = false;
 
-  bool uidFixedFlag = false;
+  std::string uidFixedFlag = "";
   if (command.GetOptionWasSet("UIDFixed"))
-    uidFixedFlag = true;
+    uidFixedFlag = command.GetValueAsString("UIDFixed", "value");
 
   int dilationErosionValue = 0;
   if (command.GetOptionWasSet("DilationErosion")) {
@@ -1985,15 +2022,27 @@ int main(int argc, char *argv[]) {
             itk::ExposeMetaData<std::string>(dictionary, "0020|0010", StudyID);
           }
 
-          if (uidFixedFlag) {
-            std::string derivedSeriesInstanceUID(seriesIdentifier);
-            std::string endString = ".1";
+          if (uidFixedFlag.size() > 0) { // this flag is a string that should be used to make the derived ids unique
+            // std::string derivedSeriesInstanceUID(seriesIdentifier);
+            // we want to use the hash of a string that depends on:
+            //  - the input series
+            //  - a string provided by the user like <version of AI>
+            //  - a string for the artifact that we create here (.1)
+            std::string str_to_hash = seriesIdentifier + uidFixedFlag + ".1";
+            newSeriesInstanceUID = get_new_uuid(str_to_hash);
+            //std::hash<std::string> hasher; // this might be operating system (library) specific, its not md5 or sha1, maybe not use this one.
+            //std::size_t hash = hasher(str_to_hash);
+            // fix any leading zero in the hash (simply add 1)
+            // str_hash = std::string("1.3.6.1.4.1.45037") + std::string(".1") + str_hash;
+            // newSeriesInstanceUID = str_hash.substr(0, 64);
+
+            /*std::string endString = ".1";
             if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".1")
               endString = ".2";
 
             // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
             derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
-            newSeriesInstanceUID = derivedSeriesInstanceUID;
+            newSeriesInstanceUID = derivedSeriesInstanceUID; */
           } else {
             if (newSeriesInstanceUID == "") {
               gdcm::UIDGenerator uid;
@@ -2113,7 +2162,8 @@ int main(int argc, char *argv[]) {
           // create a fused image using the mask in binaryErode->GetOutput()
           if (1) {
             // isn't this be done by imageAndMask2Fused? Can we disable it here? We just want the mask volume on its own in the mask output folder
-            if (uidFixedFlag) {
+            if (uidFixedFlag.size() > 0) {
+              /*
               std::string derivedFusedSeriesInstanceUID(seriesIdentifier);
               std::string endString = ".3";
               if (derivedFusedSeriesInstanceUID.substr(derivedFusedSeriesInstanceUID.size() - 2, 2) == ".3")
@@ -2122,6 +2172,10 @@ int main(int argc, char *argv[]) {
               // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
               derivedFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID.substr(0, 64 - 3) + endString;
               newFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID;
+              */
+
+              std::string str_to_hash = seriesIdentifier + uidFixedFlag + ".3";
+              newFusedSeriesInstanceUID = get_new_uuid(str_to_hash);
             } else { // we can only do this once!!! not in a loop for each slice
               if (newFusedSeriesInstanceUID == "") {
                 gdcm::UIDGenerator uid;
@@ -2131,7 +2185,8 @@ int main(int argc, char *argv[]) {
             }
 
             std::string newFusedSOPInstanceUID("");
-            if (uidFixedFlag) {
+            if (uidFixedFlag.size() > 0) {
+              /*
               std::string derivedFusedSOPInstanceUID(SOPInstanceUID);
               std::string endString = ".4";
               if (derivedFusedSOPInstanceUID.substr(derivedFusedSOPInstanceUID.size() - 2, 2) == ".4")
@@ -2140,6 +2195,9 @@ int main(int argc, char *argv[]) {
               // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
               derivedFusedSOPInstanceUID = derivedFusedSOPInstanceUID.substr(0, 64 - 3) + endString;
               newFusedSOPInstanceUID = derivedFusedSOPInstanceUID;
+              */
+              std::string str_to_hash = SOPInstanceUID + uidFixedFlag + ".4";
+              newFusedSOPInstanceUID = get_new_uuid(str_to_hash);
             } else {
               gdcm::UIDGenerator uid;
               uid.SetRoot("1.3.6.1.4.1.45037");
@@ -2169,7 +2227,7 @@ int main(int argc, char *argv[]) {
           // now change something to make a new copy of that file
           int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 1;
           std::string newSOPInstanceUID = std::string("");
-          if (uidFixedFlag) {
+          if (uidFixedFlag.size() > 0) {
             newSOPInstanceUID = SOPInstanceUID;
             // fprintf(stderr, "old SOPInstanceUID: %s\n", newSOPInstanceUID.c_str());
             //  end
@@ -2255,7 +2313,7 @@ int main(int argc, char *argv[]) {
         report->ReferringPhysician = ReferringPhysician;
 
         // TODO: in case we do uid-fixed we would need to create the same report SOPInstanceUID and SeriesInstanceUID
-        if (uidFixedFlag) {
+        if (uidFixedFlag.size() > 0) {
           std::string derivedSeriesInstanceUID(seriesIdentifier);
           std::string endString = ".7";
           if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".7")

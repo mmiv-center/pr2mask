@@ -175,11 +175,11 @@ This will create a new DICOM object in the /tmp/blarg/ folder as a structured re
 
 ### Use partial polygonal outlines for 3D segmentation
 
-The morphological contour interpolation algorithm allows us to create volume filling segmentations from a few polygonal regions (e.g. done every two slices). Create the partial segmentional mask volume first. Use the '-o' option to prevent the expensive computation of biomarkers, the '-u' option will prevent random series and image instance UIDs from being created, e.g. repeating the process will create stable UIDs based on the input. Use MorphologicalContourInterpolation second pointing it to the generated mask volume from pr2mask.
+The morphological contour interpolation algorithm allows us to create volume filling segmentations from a few polygonal regions (e.g. done every two slices). Create the partial segmentional mask volume first. Use the '-o' option to prevent the expensive computation of biomarkers, the '-u' option will prevent random series and image instance UIDs from being created, e.g. repeating the process will create stable UIDs based on the input and on the provided version number of the algorithm. Use MorphologicalContourInterpolation second pointing it to the generated mask volume from pr2mask.
 
 
 ```bash
-./pr2mask data/pr2mask_test_liver /tmp/bla -u -o
+./pr2mask data/pr2mask_test_liver /tmp/bla -u algo01_v02 -o
 ./MorphologicalContourInterpolation /tmp/bla/labels/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde42.1 \
 				    /tmp/output \
 				    --image-series /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 \
@@ -205,7 +205,7 @@ Fused image series display the map ontop of the image data in color. If you have
 If your algorithm creates a map that can be used to show the models confidence in the results you can use imageAndMask2Fused to create vote-map images. For example you can train 5 AI models with each 4/5th of the available training data. Summing up the individual binary masks (max value is 5) you create a vote-map.
 
 ```bash
-./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg --votemapmax 5 --votemapagree 0.5 -u -i "Fused mask"
+./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg --votemapmax 5 --votemapagree 0.5 -u algo01_v02 -i "Fused mask"
 ```
 
 This would create a fused image series with a blue overlay where the vote map reached or exceeded a value of 0.5 * 5 = 2.5. All other voxel with a non-zero value would be displayed in a yellow overlay color. It is useful to also provide information to the user on the maximum value realized in the current examination. You can use a placeholder that prints a percentage value obtained relative to the votemapmax value.
@@ -214,7 +214,7 @@ This would create a fused image series with a blue overlay where the vote map re
 ./imageAndMask2Fused /tmp/bla/images/1.3.6.1.4.1.45037.ffc60b90cf48bc76cd655d454f2bf8ae6aaf8ebde4262 /tmp/output/ /tmp/blarg \
      --votemapmax 5 \
      --votemapagree 0.5 \
-     -u \
+     -u algo01_v02 \
      -i "Fused mask" \
      -s "reached agreement is {peak_agreement}"
 ```
@@ -259,6 +259,6 @@ Delete the CMakeFiles folder and makefile plus CMakeCache.txt.
 To create a report you can do:
 
 ```bash
-./imageAndMask2Report data/input data/mask /tmp/blarg -u
+./imageAndMask2Report data/input data/mask /tmp/blarg -u algo01_v02
 ./json2SR /tmp/blarg/*.json
 ```

@@ -39,6 +39,9 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp> 
+#include <boost/uuid/name_generator_sha1.hpp>
 
 #include <codecvt>
 
@@ -46,6 +49,37 @@
 #include FT_FREETYPE_H
 
 std::string versionString;
+
+
+//
+// Generate a uuid for use as fixed id based on an input string
+// Example:
+//    std::string str_to_hash = SOPInstanceUID + uidFixedFlag + ".4";
+//    newFusedSOPInstanceUID = get_new_uuid(str_to_hash);
+//
+std::string get_new_uuid(const std::string& p_arg) {
+  static constexpr boost::uuids::uuid ns_id{}; // †null root, change as necessary
+  std::string as_uuid_str = boost::uuids::to_string(boost::uuids::name_generator_sha1{ns_id}(p_arg.data(), p_arg.size()));
+  // this is something like abcd-edfg-1234, convert to numeric only
+  std::string as_a_numeric = as_uuid_str;
+  boost::algorithm::replace_all(as_a_numeric, "-", ".");
+  boost::algorithm::replace_all(as_a_numeric, "a", "1");
+  boost::algorithm::replace_all(as_a_numeric, "b", "2");
+  boost::algorithm::replace_all(as_a_numeric, "c", "3");
+  boost::algorithm::replace_all(as_a_numeric, "d", "4");
+  boost::algorithm::replace_all(as_a_numeric, "e", "5");
+  boost::algorithm::replace_all(as_a_numeric, "f", "6");
+  // fix all bad uuids
+  boost::algorithm::replace_all(as_a_numeric, ".0", ".7");
+
+  std::string str_hash = std::string("1.3.6.1.4.1.45037") + std::string(".1") + as_a_numeric;
+  // restrict to max characters, don't allow a dot as last character
+  str_hash = str_hash.substr(0, 64);
+  if (str_hash.back() == '.') {
+    str_hash.back() = '8';
+  }
+  return str_hash;
+}
 
 typedef signed short PixelType;
 
@@ -77,7 +111,7 @@ typedef struct {
 } OverlayInfos_t;
 
 bool verbose = false;
-bool stableUIDs = true;
+std::string stableUIDs = "";
 
 std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
 // only three colors for background, low agreement and high agreement
@@ -496,7 +530,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     // in vote map mode we have a possible placeholder for the max votemap value relative to the possible value
     float maxObtainedVotemapValue = 100.0f * overlayInfo->obtained_max_votemap_value / overlayInfo->votemapMax;
     char buff_str[256];
-    sprintf(buff_str, "%.0f%%", maxObtainedVotemapValue);
+    snprintf(buff_str, 256, "%.0f%%", maxObtainedVotemapValue);
     std::string maxObtainedVotemapValueStr = std::string(buff_str);
     // replace the placeholder in all info strings
     std::string placeholder = "{peak_agreement}";
@@ -596,7 +630,7 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
   CImageType::PixelType *buffer_fusedImage = container_fusedImage->GetBufferPointer();
 
   std::string newFusedSeriesInstanceUID(""); // done only once
-  if (!stableUIDs) {
+  if (stableUIDs.size() == 0) { // do not create stable uids
     gdcm::UIDGenerator uid;
     uid.SetRoot("1.3.6.1.4.1.45037");
     newFusedSeriesInstanceUID = std::string(uid.Generate());
@@ -644,8 +678,8 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
     std::string newFusedSOPInstanceUID("");
     itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0018", newFusedSOPInstanceUID);
-    if (stableUIDs) {
-      std::string derivedFusedSOPInstanceUID = newFusedSOPInstanceUID;
+    if (stableUIDs.size() > 0) {
+      /*std::string derivedFusedSOPInstanceUID = newFusedSOPInstanceUID;
       std::string endString = ".4";
       if (derivedFusedSOPInstanceUID.substr(derivedFusedSOPInstanceUID.size() - 2, 2) == ".4")
         endString = ".5";
@@ -653,6 +687,9 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
       // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
       derivedFusedSOPInstanceUID = derivedFusedSOPInstanceUID.substr(0, 64 - 3) + endString;
       newFusedSOPInstanceUID = derivedFusedSOPInstanceUID;
+      */
+      std::string str_to_hash = newFusedSOPInstanceUID + stableUIDs + ".4";
+      newFusedSOPInstanceUID = get_new_uuid(str_to_hash);
     } else {
       gdcm::UIDGenerator uid;
       uid.SetRoot("1.3.6.1.4.1.45037");
@@ -724,15 +761,18 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
       modality = "OT"; // other
     }
 
-    if (stableUIDs) {
+    if (stableUIDs.size() > 0) {
       itk::ExposeMetaData<std::string>(dictionarySlice, "0020|000e", newFusedSeriesInstanceUID);
-      std::string derivedFusedSeriesInstanceUID = newFusedSeriesInstanceUID;
+      /*std::string derivedFusedSeriesInstanceUID = newFusedSeriesInstanceUID;
       std::string endString = ".3";
       if (derivedFusedSeriesInstanceUID.substr(derivedFusedSeriesInstanceUID.size() - 2, 2) == ".3")
         endString = ".4";
         // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
         derivedFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID.substr(0, 64 - 3) + endString;
         newFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID;
+        */
+        std::string str_to_hash = newFusedSeriesInstanceUID + stableUIDs + ".3";
+        newFusedSeriesInstanceUID = get_new_uuid(str_to_hash);
     }
 
     // how big is the image?
@@ -1317,8 +1357,11 @@ int main(int argc, char *argv[]) {
   command.SetOption(
     "UIDFixed", "u", false,
     "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
-    "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
+    "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done."
+    " Set the value dependent on your algorithm and the generate output <AI_version>_01 etc.."
+  );
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
+  command.AddOptionField("UIDFixed", "value", MetaCommand::STRING, false);
 
   command.SetOption("TitleText", "t", false, "Specify the title text on the fused image.");
   command.SetOptionLongTag("TitleText", "title");
@@ -1355,8 +1398,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  stableUIDs = "";
   if (command.GetOptionWasSet("UIDFixed"))
-    stableUIDs = true;
+    stableUIDs = command.GetValueAsString("UIDFixed", "value");
 
   if (command.GetOptionWasSet("Verbose"))
     verbose = true;

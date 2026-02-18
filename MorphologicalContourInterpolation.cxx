@@ -29,9 +29,44 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/date_time.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp> 
+#include <boost/uuid/name_generator_sha1.hpp>
+
 #include <codecvt>
 #include <locale> // wstring_convert
 #include <map>
+
+
+//
+// Generate a uuid for use as fixed id based on an input string
+// Example:
+//    std::string str_to_hash = SOPInstanceUID + uidFixedFlag + ".4";
+//    newFusedSOPInstanceUID = get_new_uuid(str_to_hash);
+//
+std::string get_new_uuid(const std::string& p_arg) {
+  static constexpr boost::uuids::uuid ns_id{}; // †null root, change as necessary
+  std::string as_uuid_str = boost::uuids::to_string(boost::uuids::name_generator_sha1{ns_id}(p_arg.data(), p_arg.size()));
+  // this is something like abcd-edfg-1234, convert to numeric only
+  std::string as_a_numeric = as_uuid_str;
+  boost::algorithm::replace_all(as_a_numeric, "-", ".");
+  boost::algorithm::replace_all(as_a_numeric, "a", "1");
+  boost::algorithm::replace_all(as_a_numeric, "b", "2");
+  boost::algorithm::replace_all(as_a_numeric, "c", "3");
+  boost::algorithm::replace_all(as_a_numeric, "d", "4");
+  boost::algorithm::replace_all(as_a_numeric, "e", "5");
+  boost::algorithm::replace_all(as_a_numeric, "f", "6");
+  // fix all bad uuids
+  boost::algorithm::replace_all(as_a_numeric, ".0", ".7");
+
+  std::string str_hash = std::string("1.3.6.1.4.1.45037") + std::string(".1") + as_a_numeric;
+  // restrict to max characters, don't allow a dot as last character
+  str_hash = str_hash.substr(0, 64);
+  if (str_hash.back() == '.') {
+    str_hash.back() = '8';
+  }
+  return str_hash;
+}
 
 #define isValid(x,y) ((x[0] > 0) && (x[0] < y[0]) && (x[1] > 0) && (x[1] < y[1]) && (x[2] > 0) && (x[2] < y[2]))
 using MaskImageType = itk::Image<unsigned short, 3>;
@@ -212,8 +247,11 @@ int main(int argc, char* argv[]) {
   command.SetOption(
     "UIDFixed", "u", false,
     "If enabled identifiers are stable - will not change for a given input. This allows image series to overwrite each other - assuming that the PACS "
-    "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done.");
+    "supports this overwrite mode. By default the SeriesInstanceUID and SOPInstanceUID values are generated again every time the processing is done."
+    " Set the value dependent on your algorithm and the generate output <AI_version>_01 etc.."
+  );
   command.SetOptionLongTag("UIDFixed", "uid-fixed");
+  command.AddOptionField("UIDFixed", "value", MetaCommand::STRING, false);
 
   command.SetOption("MaxNumberOfThreads", "t", false, "Use at most X (4) threads for computation.");
   command.SetOptionLongTag("MaxNumberOfThreads", "maxnumberofthreads");
@@ -255,9 +293,9 @@ int main(int argc, char* argv[]) {
   } 
   itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(maxThreads);
 
-  bool uidFixedFlag = false;
+  std::string uidFixedFlag = "";
   if (command.GetOptionWasSet("UIDFixed"))
-    uidFixedFlag = true;
+    uidFixedFlag = command.GetValueAsString("UIDFixed", "value");
 
   bool verbose = false;
   if (command.GetOptionWasSet("Verbose"))
@@ -512,7 +550,8 @@ int main(int argc, char* argv[]) {
       MaskReaderType::DictionaryArrayType  outputArray;
 
       std::string newSeriesInstanceUID("");
-      if (uidFixedFlag) {
+      if (uidFixedFlag.size() > 0) {
+        /*
         std::string derivedSeriesInstanceUID(seriesIdentifier);
         std::string endString = ".1";
         if (derivedSeriesInstanceUID.substr(derivedSeriesInstanceUID.size() - 2, 2) == ".1")
@@ -521,6 +560,9 @@ int main(int argc, char* argv[]) {
         // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
         derivedSeriesInstanceUID = derivedSeriesInstanceUID.substr(0, 64 - 3) + endString;
         newSeriesInstanceUID = derivedSeriesInstanceUID;
+        */
+        std::string str_to_hash = seriesIdentifier + uidFixedFlag + ".1";
+        newSeriesInstanceUID = get_new_uuid(str_to_hash);
       } else {
         if (newSeriesInstanceUID == "") {
           gdcm::UIDGenerator uid;
@@ -562,8 +604,8 @@ int main(int argc, char* argv[]) {
         itk::ExposeMetaData<std::string>(*inputDict, "0008|0018", oldSOPInstanceUID);
 
         std::string newSOPInstanceUID("");
-        if (uidFixedFlag) {
-          std::string derivedSOPInstanceUID(oldSOPInstanceUID);
+        if (uidFixedFlag.size() > 0) {
+          /*std::string derivedSOPInstanceUID(oldSOPInstanceUID);
           std::string endString = ".4";
           if (derivedSOPInstanceUID.substr(derivedSOPInstanceUID.size() - 2, 2) == ".4")
             endString = ".5";
@@ -571,6 +613,10 @@ int main(int argc, char* argv[]) {
           // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
           derivedSOPInstanceUID = derivedSOPInstanceUID.substr(0, 64 - 3) + endString;
           newSOPInstanceUID = derivedSOPInstanceUID;
+          */
+
+          std::string str_to_hash = oldSOPInstanceUID + uidFixedFlag + ".4";
+          newSOPInstanceUID = get_new_uuid(str_to_hash);
         } else {
           gdcm::UIDGenerator uid;
           uid.SetRoot("1.3.6.1.4.1.45037");
