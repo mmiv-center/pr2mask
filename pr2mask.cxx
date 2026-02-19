@@ -595,6 +595,7 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   at8.SetValue(sliceThickness);
   ds.Replace(at8.GetAsDataElement());
 
+  /* does not work 
   gdcm::Attribute<0x0020, 0x0037> at9;
   at9.SetValue(imageOrientationField[0], 0);
   at9.SetValue(imageOrientationField[1], 1);
@@ -603,6 +604,9 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   at9.SetValue(imageOrientationField[4], 4);
   at9.SetValue(imageOrientationField[5], 5);
   ds.Replace(at9.GetAsDataElement());
+  */
+  // this seems to work
+  image.SetDirectionCosines(imageOrientationField);
 
   // gdcm::Attribute<0x0020, 0x0013> at10;
   // at10.SetValue(imageInstance);
@@ -1661,6 +1665,7 @@ int main(int argc, char *argv[]) {
   command.SetOption("Verbose", "v", false, "Print more verbose output");
   command.SetOptionLongTag("Verbose", "verbose");
 
+  // we should remove all other computations and only produce the mask, no other folders, make -o default
   command.SetOption("NoBiomarker", "o", false, "Do not create biomarker to speed up mask processing");
   command.SetOptionLongTag("NoBiomarker", "nobiomarker");
 
@@ -2342,16 +2347,17 @@ int main(int argc, char *argv[]) {
         report->key_fact = std::to_string(key_fact);
         report->key_unit = std::string("mm^3");
 
-        // overwrite some report values
-        boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "reports" + boost::filesystem::path::preferred_separator +
-                                        newSeriesInstanceUID.c_str() + ".dcm";
-        if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
-          // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
-          create_directories(p_out.parent_path());
+        if (biomarker) {
+          // overwrite some report values
+          boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "reports" + boost::filesystem::path::preferred_separator +
+                                          newSeriesInstanceUID.c_str() + ".dcm";
+          if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
+            // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
+            create_directories(p_out.parent_path());
+          }
+          report->filename = std::string(p_out.c_str());
+          saveReport(report);
         }
-        report->filename = std::string(p_out.c_str());
-        saveReport(report);
-
         // add measures to json output
         resultJSON["measures"] = report->measures;
 
@@ -2399,9 +2405,6 @@ int main(int argc, char *argv[]) {
         std::ofstream out(json_out.c_str());
         out << res;
         out.close();
-
-
-
       }
 
     } // loop over series
