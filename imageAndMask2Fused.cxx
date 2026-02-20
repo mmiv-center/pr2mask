@@ -11,6 +11,9 @@
 #include "itkImageRegionIteratorWithIndex.h"
 
 #include "itkLinearInterpolateImageFunction.h"
+#include "itkNearestNeighborInterpolateImageFunction.h"
+#include "itkBSplineInterpolateImageFunction.h"
+#include "itkResampleImageFilter.h"
 
 #include "gdcmPhotometricInterpretation.h"
 #include "gdcmAnonymizer.h"
@@ -373,7 +376,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   }
 
   int start_px = 40;
-  int start_py = 20;
+  int start_py = 20; // what is this?
   int text_lines = 1;
 
   float repeat_spacing = 1.0f;
@@ -384,7 +387,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   int px = posx;
   // WIDTH - ((num_chars + 2) * font_size - start_px);
   // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
-  int py = posy;
+  int py = posy; // will not be used! 
   // start_py + 2.0 * (font_size);
 
   // our image is not of that size but much larger (repeated mosaic tiles in y)
@@ -411,6 +414,9 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
     fprintf(stderr, "\033[0;31mError\033[0;31m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
     return;
   }
+  // the computed pixel height depends on the resolution 150 dpi above
+  int pixel_height = face->size->metrics.y_ppem;
+  py = posy - (pixel_height / 2.0); // center the text vertically on the provided position
 
   slot = face->glyph;
 
@@ -424,7 +430,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   /* start at (300,200) relative to the upper left corner  */
   //pen.x = (num_chars * 1 * 64);
   pen.x = (1 * 64);
-  pen.y = (target_height - 40) * 64; // the 60 here is related to the font size!
+  pen.y = (target_height - pixel_height) * 64; // the 60 here is related to the font size!
 
   int nn = 0; 
   for (std::wstring::iterator it = stext.begin(); it != stext.end(); it++) {
@@ -445,7 +451,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
       continue;
     }
 
-    draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top);
+    draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top );
 
     pen.x += slot->advance.x;
     pen.y += slot->advance.y;
@@ -522,9 +528,9 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     }
   }
 
-  int kw = kregion.GetSize()[0];
+  int kw = kregion.GetSize()[1];
   int barHeight = std::max<int>(26, 0.07 * kw);
-  int fontSize = std::max<int>(4, 0.012 * kw);
+  int fontSize = std::max<int>(4, 0.015 * kw);
   addBar(fusedImage, barHeight);
   if (overlayInfo->votemapMode) {
     // in vote map mode we have a possible placeholder for the max votemap value relative to the possible value
@@ -551,9 +557,9 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     }
   }
 
-  addToReportGen(kbuffer, font_file, (fontSize+2)<7?7:fontSize+2, overlayInfo->title, 8, -22, 0);
-  addToReportGen(kbuffer, font_file, (fontSize)<7?7:fontSize, overlayInfo->subtitle, 8, 20, 0);
-  addToReportGen(kbuffer, font_file, (fontSize)<7?7:fontSize, overlayInfo->info, 8, KHEIGHT-50, 0);
+  addToReportGen(kbuffer, font_file, (fontSize+2)<7?7:fontSize+2, overlayInfo->title, 8, barHeight / 2.0, 0);
+  addToReportGen(kbuffer, font_file, (fontSize)<7?7:fontSize, overlayInfo->subtitle, 8, barHeight + (barHeight / 2), 0);
+  addToReportGen(kbuffer, font_file, (fontSize)<7?7:fontSize, overlayInfo->info, 8, KHEIGHT-(barHeight / 2.0), 0);
 
   using ImageSizeType = typename CImageType::SizeType;
   ImageSizeType regionSize;
@@ -637,46 +643,49 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
   }
 
   // the number of files and the last dimension in fusedImage have to match
-  if (numberOfFileNames != fusedImage->GetLargestPossibleRegion().GetSize()[2]) {
-    std::cerr << "Error: number of files in reference directory (" << numberOfFileNames << ") does not match number of slices in fused image ("
-              << fusedImage->GetLargestPossibleRegion().GetSize()[2] << ")" << std::endl;
+  //if (numberOfFileNames != fusedImage->GetLargestPossibleRegion().GetSize()[2]) {
+  //  std::cerr << "Error: number of files in reference directory (" << numberOfFileNames << ") does not match number of slices in fused image ("
+  //            << fusedImage->GetLargestPossibleRegion().GetSize()[2] << ")" << std::endl;
+  //  return EXIT_FAILURE;
+  //}
+
+  // read the first slice of the input only and adjust all tags values for the fused image, 
+  // that will make us independent of the actual number of slices and slice locations from the input.
+  typedef itk::ImageFileReader<ImageType2D> Reader2DType;
+  Reader2DType::Pointer r = Reader2DType::New();
+  typedef itk::GDCMImageIO ImageIOType;
+  ImageIOType::Pointer dicomIO = ImageIOType::New();
+  dicomIO->LoadPrivateTagsOn();
+  dicomIO->KeepOriginalUIDOn();
+
+  r->SetImageIO(dicomIO);
+  r->SetFileName(filenames[0]);
+  try {
+    r->Update();
+  } catch (itk::ExceptionObject &err) {
+    std::cerr << "ExceptionObject caught !" << std::endl;
+    std::cerr << err << std::endl;
     return EXIT_FAILURE;
   }
+  // now we can changed the slice each time
+  ImageType2D::Pointer im2change = r->GetOutput();
+
+  // get some meta-data from the opened file (find out what polygons are relevant)
+  typedef itk::MetaDataDictionary DictionaryType;
+  itk::MetaDataDictionary &dictionarySlice = im2change->GetMetaDataDictionary();
 
   // for each slice in the list of filenames we need to read the 2D original image, create the output and copy the tag values over that we need
-  for (int sliceNr = 0; sliceNr < filenames.size(); sliceNr++) {
-    typedef itk::ImageFileReader<ImageType2D> Reader2DType;
+  for (int sliceNr = 0; sliceNr < fusedImage->GetLargestPossibleRegion().GetSize()[2]; sliceNr++) {
     typedef itk::ImageFileWriter<CImageType2D> Writer2DType;
-    Reader2DType::Pointer r = Reader2DType::New();
 
-    typedef itk::GDCMImageIO ImageIOType;
-    ImageIOType::Pointer dicomIO = ImageIOType::New();
-    dicomIO->LoadPrivateTagsOn();
-    dicomIO->KeepOriginalUIDOn();
-
-    r->SetImageIO(dicomIO);
-    r->SetFileName(filenames[sliceNr]);
-    try {
-      r->Update();
-    } catch (itk::ExceptionObject &err) {
-      std::cerr << "ExceptionObject caught !" << std::endl;
-      std::cerr << err << std::endl;
-      return EXIT_FAILURE;
-    }
-    // now changed the slice we are importing
-    ImageType2D::Pointer im2change = r->GetOutput();
-
-    // get some meta-data from the opened file (find out what polygons are relevant)
-    typedef itk::MetaDataDictionary DictionaryType;
-    itk::MetaDataDictionary &dictionarySlice = im2change->GetMetaDataDictionary();
-
+    // all these are from the same image
     std::string frameOfReferenceUID("");
     itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0052", frameOfReferenceUID);
 
     std::string StudyInstanceUID("");
     itk::ExposeMetaData<std::string>(dictionarySlice, "0020|000d", StudyInstanceUID);
 
-    std::string newFusedSOPInstanceUID("");
+    std::string newFusedSOPInstanceUID(""); // will be the same for the first image only
     itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0018", newFusedSOPInstanceUID);
     if (stableUIDs.size() > 0) {
       /*std::string derivedFusedSOPInstanceUID = newFusedSOPInstanceUID;
@@ -688,7 +697,8 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
       derivedFusedSOPInstanceUID = derivedFusedSOPInstanceUID.substr(0, 64 - 3) + endString;
       newFusedSOPInstanceUID = derivedFusedSOPInstanceUID;
       */
-      std::string str_to_hash = newFusedSOPInstanceUID + stableUIDs + ".4";
+      // make this a different SOPInstanceUID for every slice, even if the fused SOPInstanceUID is from the first image only
+      std::string str_to_hash = newFusedSOPInstanceUID + std::to_string(sliceNr) + stableUIDs + ".4";
       newFusedSOPInstanceUID = get_new_uuid(str_to_hash);
     } else {
       gdcm::UIDGenerator uid;
@@ -711,12 +721,14 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     std::string accession_number("");
     itk::ExposeMetaData<std::string>(dictionarySlice, "0008|0050", accession_number);
 
+    // attention, we get the value here for the first slice only, we need to move it along using the resample size and the imageOrientation (orthogonal to that vector)
     std::string imagePositionPatient; // we might be able to get them this way, but can we set them?
     itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0032", imagePositionPatient);
     // perhaps we have to use the parsed values to write them again further down?
     double origin3D[3];
     sscanf(imagePositionPatient.c_str(), "%lf\\%lf\\%lf", &(origin3D[0]), &(origin3D[1]), &(origin3D[2]));
 
+    // this is ok to get only once from the first slice (assumed to not change)
     std::string imageOrientation;
     itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0037", imageOrientation); // image orientation patient
     double imageOrientationField[6];
@@ -727,16 +739,20 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     double sliceThickness = 0.0;
     itk::ExposeMetaData<std::string>(dictionarySlice, "0018|0050", sliceThicknessString);
     sscanf(sliceThicknessString.c_str(), "%lf", &sliceThickness);
+    // sliceThicknes is changing after resampling, should be adjusted
+    sliceThickness = fusedImage->GetSpacing()[2];
 
     std::string sliceLocationString;
     float sliceLocation = 0.0f;
     itk::ExposeMetaData<std::string>(dictionarySlice, "0020|1041", sliceLocationString);
     sscanf(sliceLocationString.c_str(), "%f", &sliceLocation);
+    sliceLocation = origin3D[2] + sliceNr * fusedImage->GetSpacing()[2];
 
     std::string imageInstanceString;
     int imageInstance = 0;
     itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0013", imageInstanceString);
     sscanf(imageInstanceString.c_str(), "%d", &imageInstance);
+    imageInstance = sliceNr + 1;
 
     std::string imageAcquisitionString;
     int acquisitionNumber = 0;
@@ -787,12 +803,13 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     gdcm::Image &image = *simage;
     image.SetNumberOfDimensions(2);
     // typedef itk::Image<PixelType, 2> ImageType2D;
-    ImageType2D::RegionType inRegion = im2change->GetLargestPossibleRegion();
+    // ImageType2D::RegionType inRegion = im2change->GetLargestPossibleRegion();
+    ImageType3D::RegionType inRegion = fusedImage->GetLargestPossibleRegion();
     image.SetDimension(0, static_cast<unsigned int>(inRegion.GetSize()[0]));
     image.SetDimension(1, static_cast<unsigned int>(inRegion.GetSize()[1]));
     // image.SetDimension(2, m_Dimensions[2] );
-    image.SetSpacing(0, im2change->GetSpacing()[0]);
-    image.SetSpacing(1, im2change->GetSpacing()[1]);
+    image.SetSpacing(0, fusedImage->GetSpacing()[0]);
+    image.SetSpacing(1, fusedImage->GetSpacing()[1]);
 
     image.SetPixelFormat(pf);
     image.SetPhotometricInterpretation(gdcm::PhotometricInterpretation::RGB);
@@ -801,9 +818,9 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
 
     unsigned int size_of_pixel = sizeof(CImageType::PixelType);
-    uint32_t len = size[0] * size[1] * size_of_pixel;
+    uint32_t len = inRegion.GetSize()[0] * inRegion.GetSize()[1] * size_of_pixel;
     pixeldata.SetByteValue(
-      (char *)(((&((char *)buffer_fusedImage)[sliceNr * size[0] * size[1] * size_of_pixel]))), 
+      (char *)(((&((char *)buffer_fusedImage)[sliceNr * inRegion.GetSize()[0] * inRegion.GetSize()[1] * size_of_pixel]))), 
       len);
     image.SetDataElement(pixeldata);
 
@@ -989,9 +1006,23 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     at7.Print(value2);
     // fprintf(stdout, "origin is now supposed to be: %lf\\%lf\\%lf %s\n", origin3D[0], origin3D[1], origin3D[2], value2.str().c_str());
     // For RGB we can set this to make sure they show up at the right location in Horos/OsiriX
-    image.SetOrigin(0, origin3D[0]);
-    image.SetOrigin(1, origin3D[1]);
-    image.SetOrigin(2, origin3D[2]);
+    
+    // start with the origin3D from the first slice, move in the orthogonal direction to imageOrientationPatient by the slice thickness times the sliceNr
+    double vec1[3] = {imageOrientationField[0], imageOrientationField[1], imageOrientationField[2]};
+    double vec2[3] = {imageOrientationField[3], imageOrientationField[4], imageOrientationField[5]};
+    double vec3[3];
+    vec3[0] = vec1[1]*vec2[2] - vec1[2]*vec2[1];
+    vec3[1] = vec1[2]*vec2[0] - vec1[0]*vec2[2];
+    vec3[2] = vec1[0]*vec2[1] - vec1[1]*vec2[0];
+
+    double origin3D_fused_image [3];
+    origin3D_fused_image [0] = origin3D [0] + sliceNr * sliceThickness * vec3 [0];
+    origin3D_fused_image [1] = origin3D [1] + sliceNr * sliceThickness * vec3 [1];
+    origin3D_fused_image [2] = origin3D [2] + sliceNr * sliceThickness * vec3 [2];
+
+    image.SetOrigin(0, origin3D_fused_image [0]);
+    image.SetOrigin(1, origin3D_fused_image [1]);
+    image.SetOrigin(2, origin3D_fused_image [2]);
 
     gdcm::Attribute<0x0018, 0x0050> at8;
     at8.SetValue(sliceThickness);
@@ -1049,15 +1080,16 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
     at20.SetValue(institutionName.c_str());
     ds.Replace(at20.GetAsDataElement());
 
-    boost::filesystem::path p(filenames[sliceNr]);
-    std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
+    // boost::filesystem::path p(filenames[0]);
+    char fname[1024];
+    snprintf(fname, sizeof(fname), "Image_%05d", sliceNr);
     std::string output_dir_name = "fused";
     if (overlayInfo->votemapMode) {
       output_dir_name = "fused_vote_map";
     }
 
     boost::filesystem::path p_out = outputDir + boost::filesystem::path::preferred_separator + output_dir_name + boost::filesystem::path::preferred_separator +
-      newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + filename_without_extension.c_str() + ".dcm";
+      newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + fname + ".dcm";
     if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
       // create the output directory
       create_directories(p_out.parent_path());
@@ -1083,6 +1115,35 @@ int saveFusedImageSeries(CImageType::Pointer fusedImage, std::string outputDir, 
 
 }
 
+// Upsample the inputImage in x and y directino by the upsampleFactor, using nearest neighbor interpolation for masks and B-spline interpolation for images
+ImageType3D::Pointer upsampleImage(ImageType3D::Pointer inputImage, double upsampleFactor, bool isMask) {
+  using ResampleFilterType = itk::ResampleImageFilter<ImageType3D, ImageType3D>;
+  ResampleFilterType::Pointer resampleFilter = ResampleFilterType::New();
+  resampleFilter->SetInput(inputImage);
+  resampleFilter->SetSize({static_cast<unsigned int>(inputImage->GetLargestPossibleRegion().GetSize()[0] * upsampleFactor),
+                           static_cast<unsigned int>(inputImage->GetLargestPossibleRegion().GetSize()[1] * upsampleFactor),
+                           static_cast<unsigned int>(inputImage->GetLargestPossibleRegion().GetSize()[2])});
+  resampleFilter->SetOutputOrigin(inputImage->GetOrigin());
+  ImageType3D::SpacingType outputSpacing;
+  outputSpacing[0] = inputImage->GetSpacing()[0] / upsampleFactor;
+  outputSpacing[1] = inputImage->GetSpacing()[1] / upsampleFactor;
+  outputSpacing[2] = inputImage->GetSpacing()[2]; // don't do this in the slice direction  / upsampleFactor;
+  resampleFilter->SetOutputSpacing(outputSpacing);
+  resampleFilter->SetOutputDirection(inputImage->GetDirection());
+  if (isMask) {
+    using NearestNeighborInterpolatorType = itk::NearestNeighborInterpolateImageFunction<ImageType3D, double>;
+    NearestNeighborInterpolatorType::Pointer nearestNeighborInterpolator = NearestNeighborInterpolatorType::New();
+    resampleFilter->SetInterpolator(nearestNeighborInterpolator);
+  } else {
+    // we get some strange artifacts in the yellow areas of the underlying image, maybe try itkLinearInterpolateImageFunction
+    //using InterpolatorType = itk::BSplineInterpolateImageFunction<ImageType3D, double>;
+    using InterpolatorType = itk::LinearInterpolateImageFunction<ImageType3D, double>;
+    InterpolatorType::Pointer interpolator = InterpolatorType::New();
+    resampleFilter->SetInterpolator(interpolator);
+  }
+  resampleFilter->Update();
+  return resampleFilter->GetOutput();
+}
 
 CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImageType3D::Pointer maskImage, OverlayInfos_t *overlayInfo) {
 
@@ -1132,6 +1193,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
     fflush(stdout);
   }
 
+  // This should be done before we upsample the image (speed up processing)
   // compute correct histogram settings for the output image (its RGB so we need to scale the input)
   using ImageCalculatorFilterType = itk::MinimumMaximumImageCalculator<ImageType3D>;
   ImageCalculatorFilterType::Pointer imageCalculatorFilter = ImageCalculatorFilterType::New();
@@ -1241,34 +1303,54 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
 
       // color is
       std::vector<float> col = labelColors2[ (label % (labelColors2.size()-1)) +1 ];
-      itk::Index<3U> index;
-      for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
+      itk::Index<3U> index; // this is very slow for larger images, the GetIndex function should not be used, allocates memory?
+      // we should use a LineIteratorType here to be faster
+      typedef ShapeLabelObjectType::ConstIndexIterator LineIteratorType;
+      LineIteratorType itLine(labelObject);
+      while (!itLine.IsAtEnd()) {
+        ShapeLabelObjectType::IndexType index = itLine.GetIndex();
+        // set this position in all three color images, values are between 0 and 1
+        red_channel->SetPixel(index, col[0]/255.0); 
+        green_channel->SetPixel(index, col[1]/255.0);
+        blue_channel->SetPixel(index, col[2]/255.0);
+
+        ++itLine;
+      }
+
+      // this next bit was very slow, perhaps because GetIndex creates a new index object every time
+      /*for (unsigned int pixelId = 0; pixelId < labelObject->Size(); pixelId++) {
         index = labelObject->GetIndex(pixelId);
         // set this position in all three color images, values are between 0 and 1
         red_channel->SetPixel(index, col[0]/255.0); 
         green_channel->SetPixel(index, col[1]/255.0);
         blue_channel->SetPixel(index, col[2]/255.0);
-      }
+      } */
     }
   }
+
+  // set smoothing kernel based on spacing of the image
+  double smoothingSigma = 1.0f; // in mm if we use SetUseImageSpacing(true)
 
   // smooth all three channels independently from each other
   using GFilterType = itk::DiscreteGaussianImageFilter<FloatImageType, FloatImageType>;
   auto gaussFilterR = GFilterType::New();
+  gaussFilterR->SetUseImageSpacing(true);
   gaussFilterR->SetInput(red_channel);
-  gaussFilterR->SetVariance(1.5f);
+  gaussFilterR->SetVariance(smoothingSigma); // the variance value should be better expressed in mm (keep the smoothing the same for diffferent upsamplings)
   gaussFilterR->Update();
   FloatImageType::Pointer smoothRed = gaussFilterR->GetOutput();
 
   auto gaussFilterG = GFilterType::New();
   gaussFilterG->SetInput(green_channel);
-  gaussFilterG->SetVariance(1.5f);
+  gaussFilterG->SetUseImageSpacing(true);
+  gaussFilterG->SetVariance(smoothingSigma);
   gaussFilterG->Update();
   FloatImageType::Pointer smoothGreen = gaussFilterG->GetOutput();
 
   auto gaussFilterB = GFilterType::New();
   gaussFilterB->SetInput(blue_channel);
-  gaussFilterB->SetVariance(1.5f);
+  gaussFilterB->SetUseImageSpacing(true); // filter is set in mm
+  gaussFilterB->SetVariance(smoothingSigma);
   gaussFilterB->Update();
   FloatImageType::Pointer smoothBlue = gaussFilterB->GetOutput();
 
@@ -1292,6 +1374,8 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   float red, green, blue;
   while (!inputIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
     float scaledP = ((float) inputIterator.Get() - t1) / (t2 - t1);
+    // should be clamped between 0 and 1 now
+    scaledP = std::min<float>(1, std::max<float>(0, scaledP));
     CPixelType value = fusedIterator.Value();
 
     red = redSIterator.Get();
@@ -1339,7 +1423,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
 int main(int argc, char *argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
 
-  itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(4);
+  itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(12);
 
   boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
 
@@ -1374,6 +1458,10 @@ int main(int argc, char *argv[]) {
   command.SetOption("Info", "i", false, "Specify an info message that will appear in the bottom left corner. This option can be used to identify the version/container used for creating the segmentation.");
   command.SetOptionLongTag("Info", "info");
   command.AddOptionField("Info", "info", MetaCommand::STRING, false);
+
+  command.SetOption("Upsample", "s", false, "Upsample the output images by a factor (e.g. 2) in x and y direction");
+  command.SetOptionLongTag("Upsample", "upsample");
+  command.AddOptionField("Upsample", "upsample", MetaCommand::FLOAT, false);
 
   command.SetOption("VotemapMax", "o", false, "Enable votemap display for overlapping regions of interest. The provided mask volume is assumed to be of a votemap type. The provided value should be the maximum agreement value possible.");
   command.SetOptionLongTag("VotemapMax", "votemapmax");
@@ -1477,7 +1565,21 @@ int main(int argc, char *argv[]) {
   if (inputImage == nullptr) {
     std::cerr << "Could not read image series from: " << input << std::endl;
     return EXIT_FAILURE;
-  } 
+  }
+
+  // upsample the inputImage and maskImage before computing the fused overlay
+  if (command.GetOptionWasSet("Upsample")) {
+    float upsampleFactor = command.GetValueAsFloat("Upsample", "upsample");
+    if (upsampleFactor <= 0.001) {
+      fprintf(stdout, "Error: upsample factor is too small (%f). It should be larger than 0.01.\n", upsampleFactor);
+      return EXIT_FAILURE;
+    }
+    if (verbose) {
+      fprintf(stdout, "Upsampling input and mask image by a factor of %f in x and y direction.\n", upsampleFactor);
+    }
+    inputImage = upsampleImage(inputImage, upsampleFactor, false);
+    maskImage = upsampleImage(maskImage, upsampleFactor, true);
+  }
 
   CImageType::Pointer fusedImage = computeFusedImage(inputImage, maskImage, &overlayInfos);
   if (fusedImage == nullptr) {
