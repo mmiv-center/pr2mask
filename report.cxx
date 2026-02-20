@@ -13,6 +13,9 @@
 #include "itkImageRegionIterator.h"
 #include "itkImageRegionIteratorWithIndex.h"
 
+#include "gdcmDataSet.h"
+#include "gdcmPrivateTag.h"
+#include "gdcmDataElement.h"
 
 #include <algorithm>
 #include <boost/filesystem.hpp>
@@ -25,6 +28,8 @@
 
 #include <boost/date_time.hpp>
 #include <boost/math/distributions/lognormal.hpp>
+#include "json.hpp"
+using json = nlohmann::json;
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -257,6 +262,214 @@ int get_mb(wchar_t *wc2, const char* ptr, int num) {
     return ret;
 }
 
+
+int addToReportGen(char *buffer, std::string font_file, int font_size, std::string sstext, int posx, int posy, float radiants, bool verbose) {
+  FT_Library library;
+
+
+  std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> convert;
+  std::wstring stext = convert.from_bytes(sstext);
+
+  //bool verbose = 1;
+  if (verbose) {
+    fprintf(stdout, "  addToReportGen: \"%s\"\n", sstext.c_str());
+  }
+
+  double angle;
+  int target_height;
+  int n, num_chars;
+
+  // int font_length = 20;
+
+  std::string font_path = font_file;
+  // int font_size = 42;
+  int face_index = 0;
+
+  FT_Face face;
+  FT_GlyphSlot slot;
+  FT_Matrix matrix; /* transformation matrix */
+  FT_Vector pen;    /* untransformed origin  */
+  FT_Error error;
+
+  error = FT_Init_FreeType(&library); /* initialize library */
+
+  if (error != 0) {
+    fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
+    return -1;
+  }
+
+  int start_px = 40;
+  int start_py = 20; // what is this?
+  int text_lines = 1;
+
+  float repeat_spacing = 1.0f;
+  int xmax = image_buffer_gen_size[0];
+  int ymax = image_buffer_gen_size[1];
+  num_chars = stext.size();
+
+  int px = posx;
+  // WIDTH - ((num_chars + 2) * font_size - start_px);
+  // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+  int py = posy; // will not be used! 
+  // start_py + 2.0 * (font_size);
+
+  // our image is not of that size but much larger (repeated mosaic tiles in y)
+  // reset image_buffer_gen now
+  for (int i = 0; i < image_buffer_gen_size[1]; i++) {
+    if (image_buffer_gen[i])
+      memset(image_buffer_gen[i], 0, sizeof(unsigned char) * image_buffer_gen_size[0]);
+  }
+
+  angle = radiants;
+  // the height [1] depends on the type (mosaic or curvilinear)
+  target_height = image_buffer_gen_size[1]; // 512; // shouldn't this be the height of the buffer, e.g. image_buffer_gen_size[1]?
+
+  error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
+
+  if (face == NULL) {
+    fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
+    return -1;
+  }
+
+  int font_size_in_pixel = font_size;
+  error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
+  /* error handling omitted */
+  if (error != 0) {
+    fprintf(stderr, "\033[0;31mError\033[0;31m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+    return -1;
+  }
+  // the computed pixel height depends on the resolution 150 dpi above
+  int pixel_height = face->size->metrics.y_ppem;
+  py = posy - (pixel_height / 2.0); // center the text vertically on the provided position
+
+  slot = face->glyph;
+
+  /* set up matrix */
+  matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+  matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+  matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+  matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+  /* the pen position in 26.6 cartesian space coordinates; */
+  /* start at (300,200) relative to the upper left corner  */
+  //pen.x = (num_chars * 1 * 64);
+  pen.x = (1 * 64);
+  pen.y = (target_height - pixel_height) * 64; // the 60 here is related to the font size!
+
+  int nn = 0; 
+  for (std::wstring::iterator it = stext.begin(); it != stext.end(); it++) {
+    //wchar_t c = *it;
+    wchar_t c;
+    int ret = get_mb(&c, sstext.c_str(), nn);
+    nn++;
+    if (c == '\n') {
+      continue; // ignore newlines
+    }
+
+    FT_Set_Transform(face, &matrix, &pen);
+
+    FT_UInt glyph_index = FT_Get_Char_Index( face, *it );
+    error = FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
+    if (error) {
+      fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not load character: '%ls'\n", &c);
+      continue;
+    }
+
+    draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top );
+
+    pen.x += slot->advance.x;
+    pen.y += slot->advance.y;
+  } 
+
+  FT_Done_Face(face);
+
+  float current_image_min_value = 0.0f;
+  float current_image_max_value = 255.0f;
+  unsigned char *bvals = (unsigned char *)buffer;
+  for (int yi = 0; yi < image_buffer_gen_size[1]; yi++) {
+    for (int xi = 0; xi < image_buffer_gen_size[0]; xi++) {
+      if (image_buffer_gen[yi][xi] == 0)
+        continue;
+      // I would like to copy the value from image over to
+      // the buffer. At some good location...
+
+      int newx = px + xi;
+      int newy = py + yi;
+      int idx = newy * xmax + newx;
+      if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
+        continue;
+      //if (image_buffer828[yi][xi] == 0)
+      //  continue;
+
+      // instead of blending we need to use a fixed overlay color
+      // we have image information between current_image_min_value and current_image_max_value
+      // we need to scale the image_buffer by those values.
+      float f = 1.0;
+      float v = 1.0f * image_buffer_gen[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
+      float w = f * 1.0f * bvals[idx] / current_image_max_value;
+      float alpha_blend = (v + w * (1.0f - v));
+
+      // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
+      bvals[idx] = (unsigned char)std::max(
+          0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
+    }
+  }
+  return pixel_height;
+}
+
+void addPrivateElements(gdcm::DataSet& ds, Report *report) {
+  // Define the private creator tag and value
+  std::string creatorName("MMIV REPORT HEADER");
+  gdcm::PrivateTag creatorTag(0x0041, 0x0010, creatorName.c_str()); 
+  gdcm::DataElement creatorDE(creatorTag);
+  creatorDE.SetVR(gdcm::VR::LO); // Value Representation is LO (Long String)
+  creatorDE.SetByteValue(creatorName.c_str(), creatorName.size()); // Set the value to the report title, or any other string you want
+  //creatorDE.SetStringValue("MMIV Bergen, Norway");
+  ds.Insert(creatorDE); // Insert the creator tag
+
+  gdcm::Tag privateTag(0x0041, 0x1010); // VERSION of pr2mask
+  gdcm::DataElement de(privateTag);
+  de.SetVR(gdcm::VR::LO);
+  de.SetByteValue(report->pr2maskVersionString.c_str(), report->pr2maskVersionString.size());
+  ds.Insert(de);
+
+  gdcm::Tag privateTag2(0x0041, 0x1011); // ReportType
+  gdcm::DataElement de2(privateTag2);
+  de2.SetVR(gdcm::VR::LO);
+  de2.SetByteValue(report->ReportType.c_str(), report->ReportType.size());
+  ds.Insert(de2);
+
+  // and all the measures
+  json meas = report->measures;
+  std::string measures_str = meas.dump(4);
+
+  gdcm::Tag privateTag3(0x0041, 0x1020); // Measures
+  gdcm::DataElement de3(privateTag3);
+  de3.SetVR(gdcm::VR::OB);
+  de3.SetByteValue(measures_str.c_str(), measures_str.size());
+  ds.Insert(de3);
+
+
+/*
+    // Define and add the custom data element
+    // The PrivateTag constructor handles the group, element offset, and creator
+    gdcm::PrivateTag customTag(0x0009, 0x10, creatorName.c_str());
+    gdcm::DataElement customDE(customTag);
+    customDE.SetVR(gdcm::VR::LO);
+    customDE.SetByteValue("Some custom data", strlen("Some custom data")); // Set the value to some custom data, or any other string you want
+    ds.Insert(customDE); // Insert the custom data tag
+
+    // Define and add the custom data element
+    // The PrivateTag constructor handles the group, element offset, and creator
+    gdcm::PrivateTag customTag2(0x0009, 0x20, creatorName.c_str());
+    gdcm::DataElement customDE2(customTag2);
+    customDE2.SetVR(gdcm::VR::LO);
+    customDE2.SetByteValue("Some more custom data", strlen("Some more custom data")); // Set the value to some custom data, or any other string you want
+    ds.Insert(customDE2); // Insert the custom data tag
+*/
+  }
+
+/*
 // generic method using dynamic array for image_buffer_gen
 void addToReportGen(char *buffer, std::string font_file, int font_size, std::string sstext, int posx, int posy, float radiants) {
   FT_Library library;
@@ -289,15 +502,15 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
 
   FT_Face face;
   FT_GlyphSlot slot;
-  FT_Matrix matrix; /* transformation matrix */
-  FT_Vector pen;    /* untransformed origin  */
+  FT_Matrix matrix; // transformation matrix 
+  FT_Vector pen;    // untransformed origin  
   FT_Error error;
   // gdcm::ImageReader reader;
 
   // unsigned long len = WIDTH * HEIGHT * 8;
   //  char *buffer = new char[len];
 
-  error = FT_Init_FreeType(&library); /* initialize library */
+  error = FT_Init_FreeType(&library); // initialize library 
 
   if (error != 0) {
     fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
@@ -329,7 +542,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   angle = radiants;
   target_height = 512;
 
-  error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
+  error = FT_New_Face(library, font_file.c_str(), face_index, &face); // create face object 
 
   if (face == NULL) {
     fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
@@ -337,8 +550,8 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
   }
 
   int font_size_in_pixel = font_size;
-  error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
-  /* error handling omitted */
+  error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); // set character size 
+  // error handling omitted 
   if (error != 0) {
     fprintf(stderr, "\033[0;31mError\033[0;31m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
     return;
@@ -346,40 +559,17 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
 
   slot = face->glyph;
 
-  /* set up matrix */
+  // set up matrix 
   matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
   matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
   matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
   matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
 
-  /* the pen position in 26.6 cartesian space coordinates; */
-  /* start at (300,200) relative to the upper left corner  */
+  // the pen position in 26.6 cartesian space coordinates; 
+  // start at (300,200) relative to the upper left corner  
   //pen.x = (num_chars * 1 * 64);
   pen.x = (1 * 64);
   pen.y = (target_height - 40) * 64; // the 60 here is related to the font size!
-
-
-
-
-/*  const char *text = sstext.c_str();
-  for (n = 0; n < num_chars; n++) {
-    if (text[n] == '\n') {
-      continue; // ignore newlines
-    }
-
-    FT_Set_Transform(face, &matrix, &pen);
-
-    error = FT_Load_Char(face, stext[n], FT_LOAD_RENDER);
-    if (error) {
-      fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not load character: '%c'\n", text[n]);
-      continue;
-    }
-
-    draw_bitmap_gen(&slot->bitmap, image_buffer_gen_size[0], image_buffer_gen_size[1], slot->bitmap_left, target_height - slot->bitmap_top);
-
-    pen.x += slot->advance.x;
-    pen.y += slot->advance.y;
-  } */
 
   int nn = 0; 
   for (std::wstring::iterator it = stext.begin(); it != stext.end(); it++) {
@@ -401,13 +591,6 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
       continue;
     }
 
-    /*FT_Glyph glyph;
-    error = FT_Get_Glyph( face->glyph, &glyph );
-    if (error) {
-      fprintf(stdout, "\033[0;31mError\033[0m:: [addToReportGen] could not get glyph: '%ls'\n", it);
-      continue;
-    } */
-
     // add here 
     // FT_Get_Glyph(face->glyph, &glyph);
     // FT_Glyph_To_Bitmap(&glyph, FT_RENDER_MODE_NORMAL, 0, 1);
@@ -417,8 +600,6 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
     pen.x += slot->advance.x;
     pen.y += slot->advance.y;
   } 
-
-
 
   FT_Done_Face(face);
 
@@ -458,6 +639,7 @@ void addToReportGen(char *buffer, std::string font_file, int font_size, std::str
     }
   }
 }
+*/
 
 void addToReport(char *buffer, std::string font_file, int font_size, std::string stext, int posx, int posy, float radiants) {
   FT_Library library;
@@ -784,13 +966,14 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
     // mark the top of the image as "Generated by AI"
     // what is the size of the keyImage?
     int kw = report->keyImage->GetLargestPossibleRegion().GetSize()[0];
-    int barHeight = 0.04 * kw;
-    int fontSize = 0.012 * kw;
+    int barHeight = std::min<int>(120, 0.07 * kw);
+    int fontSize = 0.015 * report->keyImage->GetLargestPossibleRegion().GetSize()[0];
+    fontSize = std::max(7, fontSize); // make sure the font is not too small, otherwise it is not readable
     addBar(report->keyImage, barHeight); // in dark yellow/orange
-    addToReportGen(kbuffer, font_file, fontSize, report->TitleText, 10, (barHeight/2)-(fontSize), 0);
-    addToReportGen(kbuffer, font_file, fontSize, std::string("[area") + (report->keyImagePositions.size()!=1?std::string("s"):std::string("")) + std::string(" of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 5, 15+barHeight, 0);  
+    int pixel_height = addToReportGen(kbuffer, font_file, fontSize, report->TitleText, 10, barHeight/2, 0, verbose);
+    addToReportGen(kbuffer, font_file, fontSize, std::string("[area") + (report->keyImagePositions.size()!=1?std::string("s"):std::string("")) + std::string(" of interest: ") + std::to_string(report->keyImageTexts.size()) + std::string("]"), 5, pixel_height/2+barHeight, 0, verbose);  
     if (report->VersionString.size() > 0)
-      addToReportGen(kbuffer, font_file, fontSize, report->VersionString, 10, (barHeight+5)*2, 0);  
+      addToReportGen(kbuffer, font_file, fontSize, report->VersionString, 10, (barHeight) + 2*(pixel_height), 0, verbose);  
 
     for (int k = 0; k < report->keyImagePositions.size(); k++) {
       //fprintf(stdout, "print %s at %d %d\n", report->keyImageTexts[k].c_str(), report->keyImagePositions[k][0], report->keyImagePositions[k][1]);
@@ -803,8 +986,8 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
         // add a marker for the exact location, need to know how large the character is...
         addMarker(kbuffer, report->keyImagePositions[k][0], report->keyImagePositions[k][1], fontSize);
 
-        addToReportGen(kbuffer, font_file, fontSize, piece1, report->keyImagePositions[k][0]-(5.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
-        addToReportGen(kbuffer, font_file, fontSize/2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(50.0/9.0*fontSize), 0);  
+        addToReportGen(kbuffer, font_file, fontSize, piece1, report->keyImagePositions[k][0]-(5.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(20.0/9.0*fontSize), 0, verbose);  
+        addToReportGen(kbuffer, font_file, fontSize-2, piece2, report->keyImagePositions[k][0]+(35.0/9.0*fontSize) + (20/9.0*fontSize), report->keyImagePositions[k][1]-(40.0/9.0*fontSize), 0, verbose);  
 
         // add TextTopRight
         // if we have a TextTopRightLabels we would prefer those, instead of the generic TextTopRight
@@ -812,22 +995,22 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
           std::istringstream f(report->TextTopRightLabels[k]);
           int c = 0;
           for (std::string line; std::getline(f, line, '\n'); c++) {
-            addToReportGen(kbuffer, font_file, fontSize/2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0);
+            addToReportGen(kbuffer, font_file, fontSize-2, line, KWIDTH-(fontSize*line.size()), report->keyImagePositions[k][1], 0, verbose);
           }
         } else if (report->TextTopRight.size() > 0) {
           std::istringstream f(report->TextTopRight);
           int c = 0;
           for (std::string line; std::getline(f, line, '\n'); c++) {
-            addToReportGen(kbuffer, font_file, fontSize/2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0);
+            addToReportGen(kbuffer, font_file, fontSize-2, line, KWIDTH-(fontSize*line.size()), k*(KHEIGHT / report->keyImagePositions.size())+(c * 1.5*fontSize)+(3.0*fontSize), 0, verbose);
           }
         }
 
-        // un-changeable text "Not for clinical use".   For Research Use Only – Not for use in diagnostic procedures.
-        addToReportGen(kbuffer, font_file, fontSize/2, "Image and measures are AI-generated and must be verified by a radiologist before clinical use", 10, (k+1)*(KHEIGHT / report->keyImagePositions.size())-(2.5*fontSize), 0);
       } else {
-        addToReportGen(kbuffer, font_file, fontSize/2, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0);  
+        addToReportGen(kbuffer, font_file, fontSize/2, report->keyImageTexts[k], report->keyImagePositions[k][0]-5, report->keyImagePositions[k][1]-(30.0/9.0*fontSize), 0, verbose);  
       }
     }
+    // un-changeable text "Not for clinical use".   For Research Use Only – Not for use in diagnostic procedures.
+    addToReportGen(kbuffer, font_file, fontSize-2, "AI-generated, must be verified by a radiologist before clinical use", 10, (KHEIGHT-pixel_height), 0, verbose);
 
     //itk::ImageRegionIterator<CImageType> kIterator(report->keyImage, kregion);
     itk::ImageRegionIteratorWithIndex<CImageType> kIterator(report->keyImage, kregion);
@@ -1033,6 +1216,9 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
       ds.Insert(nn);
     }
 
+    // we should add the computed meta data as a private creator tag as well, we will do a separate structured report
+    addPrivateElements(ds, report);
+
     gdcm::ImageWriter writer;
     writer.SetImage(*im);
     writer.SetFile(*filePtr);
@@ -1050,426 +1236,429 @@ void saveReport(Report *report, std::string distribution, float mean_mean, float
     delete[] kbuffer_color;
   } // end of keyImage
 
-  for (int roi = 0; roi < report->summary.size(); roi++) {
-//fprintf(stdout, "go over all roi in saveReport...%d\n", roi);
-//fflush(stdout);
-    //fprintf(stdout, "Start creating report page %d\n", roi+1);
-    //fflush(stdout);
-    // set the buffer to black (=0)
-    memset(&buffer[0], 0, sizeof(char)*len);
-
-    int start_px = 10;
-    int start_py = 10;
-    int text_lines = report->summary[roi].size();
-
-    float repeat_spacing = 2.0f;
-    int xmax = WIDTH;
-    int ymax = HEIGHT;
-
-    int px = start_px;
-    int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
-    py = start_py;
-
-    // write one line of text
-    for (int line = 0; line < report->summary[roi].size(); line++) {
-      memset(image_buffer, 0, sizeof(unsigned char) * HEIGHT * WIDTH);
-
-      // int lengths_min = placements[placement]["lengths"][0];
-      // int lengths_max = placements[placement]["lengths"][1];
-
-      int num_chars = report->summary[roi][line].size();
-
-      error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
-
-      if (face == NULL) {
-        fprintf(stderr, "\033[0mError\033[0m: no face found, provide the filename of a ttf file...\n");
-        return;
-      }
-
-      int font_size_in_pixel = font_size;
-      // fprintf(stdout, "try setting size %d %d\n", font_size_in_pixel, num_chars);
-      error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
-      /* error handling omitted */
-      if (error != 0) {
-        fprintf(stderr, "\033[0;31mError\033[0m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
-        return;
-      }
-
-      slot = face->glyph;
-
-      /* set up matrix */
-      matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
-      matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
-      matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
-      matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
-
-      /* the pen position in 26.6 cartesian space coordinates; */
-      /* start at (300,200) relative to the upper left corner  */
-      pen.x = 1 * 64;
-      pen.y = (target_height - 20) * 64;
-
-      const char *text = report->summary[roi][line].c_str();
-      for (n = 0; n < num_chars; n++) {
-        if (text[n] == '\n') {
-          continue; // ignore newlines
-        }
-
-        /* set transformation */
-        FT_Set_Transform(face, &matrix, &pen);
-
-        error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-        if (error)
-          continue; /* ignore errors */
-
-        /* now, draw to our target surface (convert position) draws into image_buffer */
-        draw_bitmap(&slot->bitmap, WIDTH, HEIGHT, slot->bitmap_left, target_height - slot->bitmap_top);
-
-        /* increment pen position */
-        pen.x += slot->advance.x;
-        pen.y += slot->advance.y;
-      }
-
-      FT_Done_Face(face);
-
-      float current_image_min_value = 0.0f;
-      float current_image_max_value = 255.0f;
-      unsigned char *bvals = (unsigned char *)buffer;
-      for (int yi = 0; yi < HEIGHT; yi++) {
-        for (int xi = 0; xi < WIDTH; xi++) {
-          if (image_buffer[yi][xi] == 0)
-            continue;
-          // I would like to copy the value from image over to
-          // the buffer. At some good location...
-          int newx = px + xi;
-          int newy = py + yi;
-          int idx = newy * xmax + newx;
-          if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
-            continue;
-
-          // instead of blending we need to use a fixed overlay color
-          // we have image information between current_image_min_value and current_image_max_value
-          // we need to scale the image_buffer by those values.
-          float f = 0;
-          float v = 1.0f * image_buffer[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
-          float w = 1.0f * bvals[idx] / current_image_max_value;
-          float alpha_blend = (v + w * (1.0f - v));
-
-          // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
-          bvals[idx] = (unsigned char)std::max(
-              0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
-        }
-      }
-      py += (repeat_spacing * 1.0 * font_size);
-    }
-//fprintf(stdout, "go over all roi in saveReport...%d\n", roi);
-//fflush(stdout);
-
-    // write the key fact a little bit larger on the top right
-    if (1) {
-      FT_Library library2;
-
-      double angle;
-      int target_height;
-      int n, num_chars;
-
-      // int font_length = 20;
-
-      std::string font_path = font_file;
-      int font_size = 42;
-      int face_index = 0;
-
-      FT_Face face;
-      FT_GlyphSlot slot;
-      FT_Matrix matrix;
-      FT_Vector pen;
-      FT_Error error;
-      // gdcm::ImageReader reader;
-
-      unsigned long len = WIDTH * HEIGHT;
-      // char *buffer = new char[len];
-
-      error = FT_Init_FreeType(&library2);
-
-      if (error != 0) {
-        fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
-        return;
-      }
+  // should we disable these? They are not used currently.
+  if (0) {
+    for (int roi = 0; roi < report->summary.size(); roi++) {
+  //fprintf(stdout, "go over all roi in saveReport...%d\n", roi);
+  //fflush(stdout);
+      //fprintf(stdout, "Start creating report page %d\n", roi+1);
+      //fflush(stdout);
+      // set the buffer to black (=0)
+      memset(&buffer[0], 0, sizeof(char)*len);
 
       int start_px = 10;
       int start_py = 10;
-      int text_lines = 1;
+      int text_lines = report->summary[roi].size();
 
       float repeat_spacing = 2.0f;
       int xmax = WIDTH;
       int ymax = HEIGHT;
-      // current roi's size is (overwrite the overall size in this loop)
-      std::stringstream stream;
-      if (report->measures.size() > roi && report->measures[roi].find("physical_size") != report->measures[roi].end()) {
-        stream << std::fixed << std::setprecision(2) << (atof(report->measures[roi].find("physical_size")->second.c_str())/1000.0);
-      } else {
-        stream << "unknown ";
+
+      int px = start_px;
+      int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+      py = start_py;
+
+      // write one line of text
+      for (int line = 0; line < report->summary[roi].size(); line++) {
+        memset(image_buffer, 0, sizeof(unsigned char) * HEIGHT * WIDTH);
+
+        // int lengths_min = placements[placement]["lengths"][0];
+        // int lengths_max = placements[placement]["lengths"][1];
+
+        int num_chars = report->summary[roi][line].size();
+
+        error = FT_New_Face(library, font_file.c_str(), face_index, &face); /* create face object */
+
+        if (face == NULL) {
+          fprintf(stderr, "\033[0mError\033[0m: no face found, provide the filename of a ttf file...\n");
+          return;
+        }
+
+        int font_size_in_pixel = font_size;
+        // fprintf(stdout, "try setting size %d %d\n", font_size_in_pixel, num_chars);
+        error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0); /* set character size */
+        /* error handling omitted */
+        if (error != 0) {
+          fprintf(stderr, "\033[0;31mError\033[0m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+          return;
+        }
+
+        slot = face->glyph;
+
+        /* set up matrix */
+        matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+        matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+        matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+        matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+        /* the pen position in 26.6 cartesian space coordinates; */
+        /* start at (300,200) relative to the upper left corner  */
+        pen.x = 1 * 64;
+        pen.y = (target_height - 20) * 64;
+
+        const char *text = report->summary[roi][line].c_str();
+        for (n = 0; n < num_chars; n++) {
+          if (text[n] == '\n') {
+            continue; // ignore newlines
+          }
+
+          /* set transformation */
+          FT_Set_Transform(face, &matrix, &pen);
+
+          error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+          if (error)
+            continue; /* ignore errors */
+
+          /* now, draw to our target surface (convert position) draws into image_buffer */
+          draw_bitmap(&slot->bitmap, WIDTH, HEIGHT, slot->bitmap_left, target_height - slot->bitmap_top);
+
+          /* increment pen position */
+          pen.x += slot->advance.x;
+          pen.y += slot->advance.y;
+        }
+
+        FT_Done_Face(face);
+
+        float current_image_min_value = 0.0f;
+        float current_image_max_value = 255.0f;
+        unsigned char *bvals = (unsigned char *)buffer;
+        for (int yi = 0; yi < HEIGHT; yi++) {
+          for (int xi = 0; xi < WIDTH; xi++) {
+            if (image_buffer[yi][xi] == 0)
+              continue;
+            // I would like to copy the value from image over to
+            // the buffer. At some good location...
+            int newx = px + xi;
+            int newy = py + yi;
+            int idx = newy * xmax + newx;
+            if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
+              continue;
+
+            // instead of blending we need to use a fixed overlay color
+            // we have image information between current_image_min_value and current_image_max_value
+            // we need to scale the image_buffer by those values.
+            float f = 0;
+            float v = 1.0f * image_buffer[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
+            float w = 1.0f * bvals[idx] / current_image_max_value;
+            float alpha_blend = (v + w * (1.0f - v));
+
+            // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
+            bvals[idx] = (unsigned char)std::max(
+                0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
+          }
+        }
+        py += (repeat_spacing * 1.0 * font_size);
       }
-      report->key_fact = stream.str();
-      report->key_unit = std::string("cm^3");
+  //fprintf(stdout, "go over all roi in saveReport...%d\n", roi);
+  //fflush(stdout);
 
-      num_chars = report->key_fact.size();
+      // write the key fact a little bit larger on the top right
+      if (1) {
+        FT_Library library2;
 
-      int px = WIDTH - ((num_chars + 2) * font_size - start_px);
-      // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
-      int py = start_py + 2.0 * (font_size);
+        double angle;
+        int target_height;
+        int n, num_chars;
 
-      memset(image_buffer, 0, sizeof(char) * HEIGHT * WIDTH);
+        // int font_length = 20;
 
-      //angle = 0;
-      //target_height = HEIGHT;
+        std::string font_path = font_file;
+        int font_size = 42;
+        int face_index = 0;
 
-      error = FT_New_Face(library2, font_file.c_str(), face_index, &face);
+        FT_Face face;
+        FT_GlyphSlot slot;
+        FT_Matrix matrix;
+        FT_Vector pen;
+        FT_Error error;
+        // gdcm::ImageReader reader;
 
-      if (face == NULL) {
-        fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
+        unsigned long len = WIDTH * HEIGHT;
+        // char *buffer = new char[len];
+
+        error = FT_Init_FreeType(&library2);
+
+        if (error != 0) {
+          fprintf(stderr, "\033[0;31mError\033[0m: The freetype library could not be initialized with this font.\n");
+          return;
+        }
+
+        int start_px = 10;
+        int start_py = 10;
+        int text_lines = 1;
+
+        float repeat_spacing = 2.0f;
+        int xmax = WIDTH;
+        int ymax = HEIGHT;
+        // current roi's size is (overwrite the overall size in this loop)
+        std::stringstream stream;
+        if (report->measures.size() > roi && report->measures[roi].find("physical_size") != report->measures[roi].end()) {
+          stream << std::fixed << std::setprecision(2) << (atof(report->measures[roi].find("physical_size")->second.c_str())/1000.0);
+        } else {
+          stream << "unknown ";
+        }
+        report->key_fact = stream.str();
+        report->key_unit = std::string("cm^3");
+
+        num_chars = report->key_fact.size();
+
+        int px = WIDTH - ((num_chars + 2) * font_size - start_px);
+        // int py = start_py + (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+        int py = start_py + 2.0 * (font_size);
+
+        memset(image_buffer, 0, sizeof(char) * HEIGHT * WIDTH);
+
+        //angle = 0;
+        //target_height = HEIGHT;
+
+        error = FT_New_Face(library2, font_file.c_str(), face_index, &face);
+
+        if (face == NULL) {
+          fprintf(stderr, "\033[0;31mError\033[0m: no face found, provide the filename of a ttf file...\n");
+          return;
+        }
+
+        int font_size_in_pixel = 36;
+        error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0);
+        if (error != 0) {
+          fprintf(stderr, "\033[0;31mError\033[0m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
+          return;
+        }
+
+        slot = face->glyph;
+
+        matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+        matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+        matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+        matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+        pen.x = (num_chars * 1 * 64);
+        pen.y = (target_height - 80) * 64; // the 60 here is related to the font size!
+        const char *text = report->key_fact.c_str();
+        for (n = 0; n < num_chars; n++) {
+          if (text[n] == '\n') {
+            continue; // ignore newlines
+          }
+
+          FT_Set_Transform(face, &matrix, &pen);
+
+          error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+          if (error)
+            continue;
+
+          draw_bitmap(&slot->bitmap, WIDTH, HEIGHT, slot->bitmap_left, target_height - slot->bitmap_top);
+
+          pen.x += slot->advance.x;
+          pen.y += slot->advance.y;
+        }
+
+        FT_Done_Face(face);
+
+        // int px = start_px;
+        // int py = start_py + 10.0 * (font_size);
+        //  (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
+
+        float current_image_min_value = 0.0f;
+        float current_image_max_value = 255.0f;
+        unsigned char *bvals = (unsigned char *)buffer;
+        for (int yi = 0; yi < HEIGHT; yi++) {
+          for (int xi = 0; xi < WIDTH; xi++) {
+            if (image_buffer[yi][xi] == 0)
+              continue;
+            // I would like to copy the value from image over to
+            // the buffer. At some good location...
+
+            int newx = px + xi;
+            int newy = py + yi;
+            int idx = newy * xmax + newx;
+            if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
+              continue;
+            if (image_buffer[yi][xi] == 0)
+              continue;
+
+            // instead of blending we need to use a fixed overlay color
+            // we have image information between current_image_min_value and current_image_max_value
+            // we need to scale the image_buffer by those values.
+            float f = 0;
+            float v = 1.0f * image_buffer[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
+            float w = 1.0f * bvals[idx] / current_image_max_value;
+            float alpha_blend = (v + w * (1.0f - v));
+
+            // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
+            bvals[idx] = (unsigned char)std::max(
+                0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
+          }
+        }
+        // add the units
+        //    int px = WIDTH - ((num_chars + 2) * font_size - start_px);
+        //    int py = start_py + 2.0 * (font_size);
+
+        // // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
+        addToReport(buffer, font_file, 26, std::string("cm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
+        addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
+      }
+
+      //
+      // add a logo in the lower right corner of the report
+      //
+      const int bitmapWidth = 13;
+      const int bitmapHeight = 10;
+      unsigned char bitmap[bitmapWidth * bitmapHeight] = {
+            '@', '@', '@', '@',  0 ,  0 ,  0 ,  0 ,  0 , '@', '@', '@', '@',
+            '@', '@', '@', '@',  0 ,  0 ,  0 ,  0 ,  0 , '@', '@', '@', '@',
+            '@',  0 ,  0 , '@',  0 , '@', '@',  0 ,  0 , '@',  0 ,  0 , '@',
+            '@',  0 ,  0 , '@', '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 , '@',
+            '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
+            '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
+            '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
+            '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
+            '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
+            '@',  0 ,  0 ,  0 ,  0 , '@', '@',  0 ,  0 , '@',  0 ,  0 ,  0 
+      };
+      int startX1 = WIDTH - bitmapWidth;  // Calculate the starting X position for the bitmap
+      int startY1 = HEIGHT - bitmapHeight;  // Calculate the starting Y position for the bitmap
+
+      // Copy the bitmap into the 2D image buffer
+      for (int ytt = 0; ytt < bitmapHeight; ++ytt) {
+          for (int xtt = 0; xtt < bitmapWidth; ++xtt) {
+              buffer[(startY1 + ytt) * WIDTH + (startX1 + xtt)] = bitmap[ytt * bitmapWidth + xtt];
+          }
+      }
+
+      // we need some color values here instead of gray-scale
+      for (unsigned int c = 0; c < WIDTH * HEIGHT; c++) {
+          buffer_color[3*c+0] = buffer[c];
+          buffer_color[3*c+1] = buffer[c];
+          buffer_color[3*c+2] = buffer[c];
+      }
+
+      gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
+      pixeldata.SetByteValue(buffer_color, WIDTH * HEIGHT * 3); // in bytes
+
+      gdcm::SmartPointer<gdcm::Image> im = new gdcm::Image;
+      im->SetNumberOfDimensions(2);
+      im->SetDimension(0, xmax);
+      im->SetDimension(1, ymax);
+      im->SetPhotometricInterpretation(gdcm::PhotometricInterpretation::RGB); // change_image.GetPhotometricInterpretation());
+      im->GetPixelFormat().SetSamplesPerPixel(3);
+
+  //    im->GetPixelFormat().SetBitsAllocated(8); // change_image.GetPixelFormat().GetBitsAllocated());
+  //    im->GetPixelFormat().SetBitsStored(8);    // change_image.GetPixelFormat().GetBitsStored());
+  //    im->GetPixelFormat().SetHighBit(7);
+  //    im->GetPixelFormat().SetPixelRepresentation(gdcm::PixelFormat::UINT8);
+      //im->SetSlope(1.0);
+      //im->SetIntercept(0);
+      im->SetTransferSyntax(gdcm::TransferSyntax::ExplicitVRLittleEndian);
+
+
+      // gdcm::Image im = change_image;
+      gdcm::File *filePtr = new gdcm::File;
+      gdcm::Anonymizer anon;
+      anon.SetFile(*filePtr);
+      anon.Replace(gdcm::Tag(0x0008, 0x0008), "DERIVED\\SECONDARY\\OTHER"); // ImageType
+      anon.Replace(gdcm::Tag(0x0028, 0x0002), "3");            // SamplesperPixel
+      anon.Replace(gdcm::Tag(0x0028, 0x0004), "RGB");  // PhotometricInterpretation
+      anon.Replace(gdcm::Tag(0x0028, 0x0010), std::to_string(HEIGHT).c_str());         // Rows
+      anon.Replace(gdcm::Tag(0x0028, 0x0011), std::to_string(WIDTH).c_str());          // Columns
+      anon.Replace(gdcm::Tag(0x0028, 0x0030), "1\\1"); // PixelSpacing
+
+  //    anon.Replace(gdcm::Tag(0x0028, 0x1050), "128"); // WindowCenter
+  //    anon.Replace(gdcm::Tag(0x0028, 0x1051), "255"); // WindowWidth
+  //    anon.Replace(gdcm::Tag(0x0028, 0x1052), "0");   // RescaleIntercept
+  //    anon.Replace(gdcm::Tag(0x0028, 0x1053), "1");   // RescaleSlope
+                                                      //  anon.Replace(gdcm::Tag(0x0028, 0x0103), "0");   // use unsigned 0..255
+
+      anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
+      // use a new StudyID tag
+      //anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
+      anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyInstanceUID.c_str());
+
+      anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
+      anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
+      anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
+      anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
+      anon.Replace(gdcm::Tag(0x0008, 0x0090), report->ReferringPhysician.c_str());
+      //  anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
+      anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
+      anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
+      anon.Replace(gdcm::Tag(0x0008, 0x0021), report->SeriesDate.c_str());
+      anon.Replace(gdcm::Tag(0x0008, 0x0031), report->SeriesTime.c_str());
+      anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
+      anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
+
+
+      anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(roi+1).c_str()); // InstanceNumber
+      anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
+
+      boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
+      char dateOfReport[9];
+      int year = timeLocal.date().year();
+      int month = timeLocal.date().month();
+      int day = timeLocal.date().day();
+      snprintf(dateOfReport, 9, "%04d%02d%02d", year, month, day);
+      std::string DateOfSecondaryCapture = std::string(dateOfReport);
+      // std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
+      char timeOfReport[7];
+      snprintf(timeOfReport, 7, "%02d%02d%02d", (int)(timeLocal.time_of_day().hours()), (int)(timeLocal.time_of_day().minutes()),
+              (int)(timeLocal.time_of_day().seconds()));
+      std::string TimeOfSecondaryCapture = std::string(timeOfReport);
+      //    std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
+
+      anon.Replace(gdcm::Tag(0x0018, 0x1012), DateOfSecondaryCapture.c_str());
+      anon.Replace(gdcm::Tag(0x0018, 0x1014), TimeOfSecondaryCapture.c_str());
+      anon.Replace(gdcm::Tag(0x0018, 0x1016), std::string("pr2mask").c_str());
+      anon.Replace(gdcm::Tag(0x0020, 0x4000), std::string("Region of interest shape, intensity and texture measures").c_str());
+
+      //im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT);
+      //im->GetPixelFormat().SetSamplesPerPixel(1);
+
+      gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
+      im->SetDataElement(pixeldata);
+      gdcm::Attribute<0x0008, 0x18> ss;
+      // adjust the SOPInstanceUID string in case we have more than one report to write
+      // int size_num = std::to_string(report->summary.size()).size()+1;
+      std::string marker = report->SOPInstanceUID.substr(report->SOPInstanceUID.find_last_of(".") + 1);
+      std::string newMarker = marker + std::to_string(roi);
+      std::string newSOPInstanceUID = report->SOPInstanceUID.substr(0,report->SOPInstanceUID.find_last_of("."));
+      if (newSOPInstanceUID.size() + newMarker.size() > 62) {
+        newSOPInstanceUID = newSOPInstanceUID.substr(0, newSOPInstanceUID.size()-newMarker.size()-1);
+      }
+      newSOPInstanceUID = newSOPInstanceUID + std::string(".") + newMarker;
+      //fprintf(stdout, "%s %s\n", report->SOPInstanceUID.c_str(), newSOPInstanceUID.c_str());
+      ss.SetValue(newSOPInstanceUID.c_str()); // TODO: we need a different SOPInstanceUID for each roi
+      ds.Replace(ss.GetAsDataElement());
+
+      gdcm::Attribute<0x0020, 0x000e> ss2;
+      ss2.SetValue(report->SeriesInstanceUID.c_str());
+      ds.Replace(ss2.GetAsDataElement());
+
+      gdcm::Attribute<0x0010, 0x0010> ss3;
+      ss3.SetValue(report->PatientName.c_str());
+      ds.Replace(ss3.GetAsDataElement());
+
+      gdcm::Attribute<0x0010, 0x0020> ss4;
+      ss4.SetValue(report->PatientID.c_str());
+      ds.Replace(ss4.GetAsDataElement());
+
+      gdcm::Attribute<0x0020, 0x000d> ss5;
+      ss5.SetValue(report->StudyInstanceUID.c_str());
+      ds.Replace(ss5.GetAsDataElement());
+
+      gdcm::ImageWriter writer;
+      writer.SetImage(*im);
+      writer.SetFile(*filePtr);
+
+      // file names should have a roi counter attached, see if it ends with .dcm and remove it
+      std::string out_filename = std::string(report->filename);
+      if (out_filename.substr(out_filename.find_last_of(".") + 1) == "dcm") {
+        out_filename = out_filename.substr(0, out_filename.find_last_of("."));
+      }
+      writer.SetFileName((out_filename + std::string("_") + std::to_string(roi) + std::string(".dcm")).c_str());
+      if (!writer.Write()) {
         return;
       }
-
-      int font_size_in_pixel = 36;
-      error = FT_Set_Char_Size(face, font_size_in_pixel * 64, 0, 150, 150); // font_size_in_pixel * 64, 0, 96, 0);
-      if (error != 0) {
-        fprintf(stderr, "\033[0;31mError\033[0m: FT_Set_Char_Size returned error, could not set size %d.\n", font_size_in_pixel);
-        return;
-      }
-
-      slot = face->glyph;
-
-      matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
-      matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
-      matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
-      matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
-
-      pen.x = (num_chars * 1 * 64);
-      pen.y = (target_height - 80) * 64; // the 60 here is related to the font size!
-      const char *text = report->key_fact.c_str();
-      for (n = 0; n < num_chars; n++) {
-        if (text[n] == '\n') {
-          continue; // ignore newlines
-        }
-
-        FT_Set_Transform(face, &matrix, &pen);
-
-        error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-        if (error)
-          continue;
-
-        draw_bitmap(&slot->bitmap, WIDTH, HEIGHT, slot->bitmap_left, target_height - slot->bitmap_top);
-
-        pen.x += slot->advance.x;
-        pen.y += slot->advance.y;
-      }
-
-      FT_Done_Face(face);
-
-      // int px = start_px;
-      // int py = start_py + 10.0 * (font_size);
-      //  (text_lines * font_size + text_lines * (repeat_spacing * 0.5 * font_size));
-
-      float current_image_min_value = 0.0f;
-      float current_image_max_value = 255.0f;
-      unsigned char *bvals = (unsigned char *)buffer;
-      for (int yi = 0; yi < HEIGHT; yi++) {
-        for (int xi = 0; xi < WIDTH; xi++) {
-          if (image_buffer[yi][xi] == 0)
-            continue;
-          // I would like to copy the value from image over to
-          // the buffer. At some good location...
-
-          int newx = px + xi;
-          int newy = py + yi;
-          int idx = newy * xmax + newx;
-          if (newx < 0 || newx >= xmax || newy < 0 || newy >= ymax)
-            continue;
-          if (image_buffer[yi][xi] == 0)
-            continue;
-
-          // instead of blending we need to use a fixed overlay color
-          // we have image information between current_image_min_value and current_image_max_value
-          // we need to scale the image_buffer by those values.
-          float f = 0;
-          float v = 1.0f * image_buffer[yi][xi] / 255.0; // 0 to 1 for color, could be inverted if we have a white background
-          float w = 1.0f * bvals[idx] / current_image_max_value;
-          float alpha_blend = (v + w * (1.0f - v));
-
-          // fprintf(stdout, "%d %d: %d\n", xi, yi, bvals[idx]);
-          bvals[idx] = (unsigned char)std::max(
-              0.0f, std::min(current_image_max_value, current_image_min_value + (alpha_blend) * (current_image_max_value - current_image_min_value)));
-        }
-      }
-      // add the units
-      //    int px = WIDTH - ((num_chars + 2) * font_size - start_px);
-      //    int py = start_py + 2.0 * (font_size);
-
-      // // addToReport(buffer, font_file, 36, report->key_fact, WIDTH - ((num_chars + 2) * font_size - start_px), start_py + 2.0 * (font_size), 0);
-      addToReport(buffer, font_file, 26, std::string("cm"), (WIDTH) - ((1.2) * font_size), start_py + 0.5 * (font_size), -3.1415927 / 2.0);
-      addToReport(buffer, font_file, 16, std::string("3"), (WIDTH) - ((0.8) * font_size), start_py + 2.0 * (font_size), -3.1415927 / 2.0);
-    }
-
-    //
-    // add a logo in the lower right corner of the report
-    //
-    const int bitmapWidth = 13;
-    const int bitmapHeight = 10;
-    unsigned char bitmap[bitmapWidth * bitmapHeight] = {
-          '@', '@', '@', '@',  0 ,  0 ,  0 ,  0 ,  0 , '@', '@', '@', '@',
-          '@', '@', '@', '@',  0 ,  0 ,  0 ,  0 ,  0 , '@', '@', '@', '@',
-          '@',  0 ,  0 , '@',  0 , '@', '@',  0 ,  0 , '@',  0 ,  0 , '@',
-          '@',  0 ,  0 , '@', '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 , '@',
-          '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
-          '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
-          '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
-          '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
-          '@',  0 ,  0 ,  0 , '@',  0 ,  0 , '@',  0 , '@',  0 ,  0 ,  0 ,
-          '@',  0 ,  0 ,  0 ,  0 , '@', '@',  0 ,  0 , '@',  0 ,  0 ,  0 
-    };
-    int startX1 = WIDTH - bitmapWidth;  // Calculate the starting X position for the bitmap
-    int startY1 = HEIGHT - bitmapHeight;  // Calculate the starting Y position for the bitmap
-
-    // Copy the bitmap into the 2D image buffer
-    for (int ytt = 0; ytt < bitmapHeight; ++ytt) {
-        for (int xtt = 0; xtt < bitmapWidth; ++xtt) {
-            buffer[(startY1 + ytt) * WIDTH + (startX1 + xtt)] = bitmap[ytt * bitmapWidth + xtt];
-        }
-    }
-
-    // we need some color values here instead of gray-scale
-    for (unsigned int c = 0; c < WIDTH * HEIGHT; c++) {
-        buffer_color[3*c+0] = buffer[c];
-        buffer_color[3*c+1] = buffer[c];
-        buffer_color[3*c+2] = buffer[c];
-    }
-
-    gdcm::DataElement pixeldata(gdcm::Tag(0x7fe0, 0x0010));
-    pixeldata.SetByteValue(buffer_color, WIDTH * HEIGHT * 3); // in bytes
-
-    gdcm::SmartPointer<gdcm::Image> im = new gdcm::Image;
-    im->SetNumberOfDimensions(2);
-    im->SetDimension(0, xmax);
-    im->SetDimension(1, ymax);
-    im->SetPhotometricInterpretation(gdcm::PhotometricInterpretation::RGB); // change_image.GetPhotometricInterpretation());
-    im->GetPixelFormat().SetSamplesPerPixel(3);
-
-//    im->GetPixelFormat().SetBitsAllocated(8); // change_image.GetPixelFormat().GetBitsAllocated());
-//    im->GetPixelFormat().SetBitsStored(8);    // change_image.GetPixelFormat().GetBitsStored());
-//    im->GetPixelFormat().SetHighBit(7);
-//    im->GetPixelFormat().SetPixelRepresentation(gdcm::PixelFormat::UINT8);
-    //im->SetSlope(1.0);
-    //im->SetIntercept(0);
-    im->SetTransferSyntax(gdcm::TransferSyntax::ExplicitVRLittleEndian);
-
-
-    // gdcm::Image im = change_image;
-    gdcm::File *filePtr = new gdcm::File;
-    gdcm::Anonymizer anon;
-    anon.SetFile(*filePtr);
-    anon.Replace(gdcm::Tag(0x0008, 0x0008), "DERIVED\\SECONDARY\\OTHER"); // ImageType
-    anon.Replace(gdcm::Tag(0x0028, 0x0002), "3");            // SamplesperPixel
-    anon.Replace(gdcm::Tag(0x0028, 0x0004), "RGB");  // PhotometricInterpretation
-    anon.Replace(gdcm::Tag(0x0028, 0x0010), std::to_string(HEIGHT).c_str());         // Rows
-    anon.Replace(gdcm::Tag(0x0028, 0x0011), std::to_string(WIDTH).c_str());          // Columns
-    anon.Replace(gdcm::Tag(0x0028, 0x0030), "1\\1"); // PixelSpacing
-
-//    anon.Replace(gdcm::Tag(0x0028, 0x1050), "128"); // WindowCenter
-//    anon.Replace(gdcm::Tag(0x0028, 0x1051), "255"); // WindowWidth
-//    anon.Replace(gdcm::Tag(0x0028, 0x1052), "0");   // RescaleIntercept
-//    anon.Replace(gdcm::Tag(0x0028, 0x1053), "1");   // RescaleSlope
-                                                    //  anon.Replace(gdcm::Tag(0x0028, 0x0103), "0");   // use unsigned 0..255
-
-    anon.Replace(gdcm::Tag(0x0008, 0x0050), report->AccessionNumber.c_str());
-    // use a new StudyID tag
-    //anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyID.c_str());
-    anon.Replace(gdcm::Tag(0x0020, 0x0010), report->StudyInstanceUID.c_str());
-
-    anon.Replace(gdcm::Tag(0x0020, 0x0052), report->FrameOfReferenceUID.c_str());
-    anon.Replace(gdcm::Tag(0x0010, 0x0010), report->PatientName.c_str());
-    anon.Replace(gdcm::Tag(0x0010, 0x0020), report->PatientID.c_str());
-    anon.Replace(gdcm::Tag(0x0020, 0x000d), report->StudyInstanceUID.c_str());
-    anon.Replace(gdcm::Tag(0x0008, 0x0090), report->ReferringPhysician.c_str());
-    //  anon.Replace(gdcm::Tag(0x0008, 0x103e), report->SeriesDescription.c_str());
-    anon.Replace(gdcm::Tag(0x0008, 0x0020), report->StudyDate.c_str());
-    anon.Replace(gdcm::Tag(0x0008, 0x0030), report->StudyTime.c_str());
-    anon.Replace(gdcm::Tag(0x0008, 0x0021), report->SeriesDate.c_str());
-    anon.Replace(gdcm::Tag(0x0008, 0x0031), report->SeriesTime.c_str());
-    anon.Replace(gdcm::Tag(0x0020, 0x0011), std::to_string(1000).c_str());
-    anon.Replace(gdcm::Tag(0x0008, 0x0080), report->InstitutionName.c_str());
-
-
-    anon.Replace(gdcm::Tag(0x0020, 0x0013), std::to_string(roi+1).c_str()); // InstanceNumber
-    anon.Replace(gdcm::Tag(0x0008, 0x103e), std::string("Biomarker report (research PACS)").c_str());
-
-    boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
-    char dateOfReport[9];
-    int year = timeLocal.date().year();
-    int month = timeLocal.date().month();
-    int day = timeLocal.date().day();
-    snprintf(dateOfReport, 9, "%04d%02d%02d", year, month, day);
-    std::string DateOfSecondaryCapture = std::string(dateOfReport);
-    // std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
-    char timeOfReport[7];
-    snprintf(timeOfReport, 7, "%02d%02d%02d", (int)(timeLocal.time_of_day().hours()), (int)(timeLocal.time_of_day().minutes()),
-            (int)(timeLocal.time_of_day().seconds()));
-    std::string TimeOfSecondaryCapture = std::string(timeOfReport);
-    //    std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
-
-    anon.Replace(gdcm::Tag(0x0018, 0x1012), DateOfSecondaryCapture.c_str());
-    anon.Replace(gdcm::Tag(0x0018, 0x1014), TimeOfSecondaryCapture.c_str());
-    anon.Replace(gdcm::Tag(0x0018, 0x1016), std::string("pr2mask").c_str());
-    anon.Replace(gdcm::Tag(0x0020, 0x4000), std::string("Region of interest shape, intensity and texture measures").c_str());
-
-    //im->GetDataElement().SetByteValue(buffer, WIDTH * HEIGHT);
-    //im->GetPixelFormat().SetSamplesPerPixel(1);
-
-    gdcm::DataSet &ds = filePtr->GetDataSet(); // ds = reader.GetFile().GetDataSet();
-    im->SetDataElement(pixeldata);
-    gdcm::Attribute<0x0008, 0x18> ss;
-    // adjust the SOPInstanceUID string in case we have more than one report to write
-    // int size_num = std::to_string(report->summary.size()).size()+1;
-    std::string marker = report->SOPInstanceUID.substr(report->SOPInstanceUID.find_last_of(".") + 1);
-    std::string newMarker = marker + std::to_string(roi);
-    std::string newSOPInstanceUID = report->SOPInstanceUID.substr(0,report->SOPInstanceUID.find_last_of("."));
-    if (newSOPInstanceUID.size() + newMarker.size() > 62) {
-      newSOPInstanceUID = newSOPInstanceUID.substr(0, newSOPInstanceUID.size()-newMarker.size()-1);
-    }
-    newSOPInstanceUID = newSOPInstanceUID + std::string(".") + newMarker;
-    //fprintf(stdout, "%s %s\n", report->SOPInstanceUID.c_str(), newSOPInstanceUID.c_str());
-    ss.SetValue(newSOPInstanceUID.c_str()); // TODO: we need a different SOPInstanceUID for each roi
-    ds.Replace(ss.GetAsDataElement());
-
-    gdcm::Attribute<0x0020, 0x000e> ss2;
-    ss2.SetValue(report->SeriesInstanceUID.c_str());
-    ds.Replace(ss2.GetAsDataElement());
-
-    gdcm::Attribute<0x0010, 0x0010> ss3;
-    ss3.SetValue(report->PatientName.c_str());
-    ds.Replace(ss3.GetAsDataElement());
-
-    gdcm::Attribute<0x0010, 0x0020> ss4;
-    ss4.SetValue(report->PatientID.c_str());
-    ds.Replace(ss4.GetAsDataElement());
-
-    gdcm::Attribute<0x0020, 0x000d> ss5;
-    ss5.SetValue(report->StudyInstanceUID.c_str());
-    ds.Replace(ss5.GetAsDataElement());
-
-    gdcm::ImageWriter writer;
-    writer.SetImage(*im);
-    writer.SetFile(*filePtr);
-
-    // file names should have a roi counter attached, see if it ends with .dcm and remove it
-    std::string out_filename = std::string(report->filename);
-    if (out_filename.substr(out_filename.find_last_of(".") + 1) == "dcm") {
-      out_filename = out_filename.substr(0, out_filename.find_last_of("."));
-    }
-    writer.SetFileName((out_filename + std::string("_") + std::to_string(roi) + std::string(".dcm")).c_str());
-    if (!writer.Write()) {
-      return;
-    }
-  } // loop over rois   
+    } // loop over rois
+  }   
   delete[] buffer;
   delete[] buffer_color;
   FT_Done_FreeType(library);
