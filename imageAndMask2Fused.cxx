@@ -1423,7 +1423,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
 int main(int argc, char *argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
 
-  itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(12);
+  itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(4);
 
   boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
 
