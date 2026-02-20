@@ -1098,7 +1098,9 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   }
 
   float scaling = 1.0f; // 3*(image->GetSpacing()[directionLongestAxis ]/(1.0f * image->GetSpacing()[sampleDimension]));
-  scaling = 512.0/2.0 * image->GetSpacing()[sampleDimension]/fusedRegion.GetSize()[sampleDimension]; //*image->GetSpacing()[directionLongestAxis];
+  // TODO: the 256 depends on the resolution of the output image, if we use 512x512 the value should be 512, but for 1024x1024 we need 256(???)
+  //scaling = 512.0/2.0 * image->GetSpacing()[sampleDimension]/fusedRegion.GetSize()[sampleDimension]; //*image->GetSpacing()[directionLongestAxis];
+  scaling = (fusedRegion.GetSize()[sampleDimension] / (float)resolution[0]) * image->GetSpacing()[sampleDimension];
 
   outputRGBIterator.GoToBegin(); // 2D Volume of curved slice
   while (!outputRGBIterator.IsAtEnd() ) {
@@ -2121,7 +2123,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   if (isMosaic) {
     rets = generateKeyImageMosaic(image, labelMap, std::vector<int>{2048,2048}, report->BrightnessContrastLL, report->BrightnessContrastUL);
   } else {
-    rets = generateKeyImage(image, labelMap, std::vector<int>{512,512}, report->BrightnessContrastLL, report->BrightnessContrastUL);
+    rets = generateKeyImage(image, labelMap, std::vector<int>{1024,1024}, report->BrightnessContrastLL, report->BrightnessContrastUL);
   }
   report->keyImage = rets.keyImage;
   report->keyImagePositions = rets.pos;
@@ -2464,11 +2466,9 @@ static inline std::string rtrim_copy(std::string s) {
 int main(int argc, char *argv[]) {
   setlocale(LC_NUMERIC, "en_US.utf-8");
 
-
   //std::setlocale(LC_ALL, "en_US.utf8");
   //const char* s = argv[2];
   //print_mb(s);
-
 
   boost::posix_time::ptime timeLocal = boost::posix_time::microsec_clock::local_time();
   resultJSON["run_date_time"] = to_simple_string(timeLocal);
