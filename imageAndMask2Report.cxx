@@ -2079,6 +2079,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
     fflush(stdout);
   }
   auto connected = ConnectedComponentImageFilterType::New();
+  connected->SetFullyConnected(true); // we want to use 26 connectedness for 3D
   connected->SetInput(mask);
   connected->Update();
   if (verbose) {
