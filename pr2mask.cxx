@@ -1338,6 +1338,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
   using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType, LabelMapType>;
 
   auto connected = ConnectedComponentImageFilterType::New();
+  connected->SetFullyConnected(true); // we want to use 26 connectivity for 3D
   connected->SetInput(mask);
   connected->Update();
 
