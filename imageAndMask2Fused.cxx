@@ -1369,7 +1369,7 @@ CImageType::Pointer computeFusedImage(ImageType3D::Pointer inputImage, MaskImage
   // maskIterator.GoToBegin();
   float f = 0.6; // weight of the underlay, at 0.1 only mask is visible
   if (overlayInfo->votemapMode) {
-    f = 0.3; // in votemap mode we want to see more of the underlay
+    f = 0.5; // in votemap mode we want to see more of the underlay
   }
   float red, green, blue;
   while (!inputIterator.IsAtEnd() && !fusedIterator.IsAtEnd() && !redSIterator.IsAtEnd() && !greenSIterator.IsAtEnd() && !blueSIterator.IsAtEnd()) {
