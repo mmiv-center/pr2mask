@@ -3074,117 +3074,48 @@ int main(int argc, char *argv[]) {
           // that have been selected before (air in intestines for example).
           // buffer2 is destination, buffer3 is source (mask)
           memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
-          // We can clean the data (remove all other label).
-          /*for (int k = 0; k < size[0] * size[1]; k++) {
-            if (buffer2[k] > 3) {
-              buffer2[k] = 0; // set to background
-            }
-          }*/
 
-          // dilate and erode the im2change (mask) (would be better if we do this in 3D)
-          using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
-          using ErodeFilterType = itk::BinaryErodeImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
-          using DilateFilterType = itk::BinaryDilateImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
-          DilateFilterType::Pointer binaryDilate = DilateFilterType::New();
-          ErodeFilterType::Pointer binaryErode = ErodeFilterType::New();
-
-          StructuringElementType structuringElement;
-          structuringElement.SetRadius(1); // 3x3 structuring element
-          structuringElement.CreateStructuringElement();
-          binaryDilate->SetKernel(structuringElement);
-          binaryErode->SetKernel(structuringElement);
-          binaryErode->SetForegroundValue(1);
-          binaryErode->SetBackgroundValue(0);
-          binaryDilate->SetForegroundValue(1);
-          binaryDilate->SetBackgroundValue(0);
-          binaryDilate->SetInput(im2change); // should this be maskImage?
-          binaryErode->SetInput(binaryDilate->GetOutput());
-          binaryDilate->SetDilateValue(1);
-          binaryErode->SetErodeValue(1);
-
-          try {
-            binaryErode->Update();
-          } catch (itk::ExceptionObject &err) {
-            std::cerr << "ExceptionObject caught !" << std::endl;
-            std::cerr << err << std::endl;
-            return EXIT_FAILURE;
-          }
-          // per slice we should compute volumes here
-          float intersliceThickness = 0;
-
-          // create a fused image using the mask in binaryErode->GetOutput()
-          // use the imageAndMask2Fused executable instead - it will not do a connected component analysis and it will work in 3D
+          // all of the next we don't need
           if (0) {
-            if (uidFixedFlag.size() > 0) {
-              /*
-              std::string derivedFusedSeriesInstanceUID(seriesIdentifier);
-              std::string endString = ".3";
-              if (derivedFusedSeriesInstanceUID.substr(derivedFusedSeriesInstanceUID.size() - 2, 2) == ".3")
-                endString = ".4";
+            // dilate and erode the im2change (mask) (would be better if we do this in 3D)
+            using StructuringElementType = itk::BinaryBallStructuringElement<PixelType, 2>;
+            using ErodeFilterType = itk::BinaryErodeImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
+            using DilateFilterType = itk::BinaryDilateImageFilter<ImageType2D, ImageType2D, StructuringElementType>;
+            DilateFilterType::Pointer binaryDilate = DilateFilterType::New();
+            ErodeFilterType::Pointer binaryErode = ErodeFilterType::New();
 
-              // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
-              derivedFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID.substr(0, 64 - 3) + endString;
-              newFusedSeriesInstanceUID = derivedFusedSeriesInstanceUID;
-              */
-              std::string str_to_hash = seriesIdentifier + uidFixedFlag + ".3";
-              newFusedSeriesInstanceUID = get_new_uuid(str_to_hash);
-            } else { // we can only do this once!!! not in a loop for each slice
-              if (newFusedSeriesInstanceUID == "") {
-                gdcm::UIDGenerator uid;
-                uid.SetRoot("1.3.6.1.4.1.45037");
-                newFusedSeriesInstanceUID = std::string(uid.Generate());
-              }
+            StructuringElementType structuringElement;
+            structuringElement.SetRadius(1); // 3x3 structuring element
+            structuringElement.CreateStructuringElement();
+            binaryDilate->SetKernel(structuringElement);
+            binaryErode->SetKernel(structuringElement);
+            binaryErode->SetForegroundValue(1);
+            binaryErode->SetBackgroundValue(0);
+            binaryDilate->SetForegroundValue(1);
+            binaryDilate->SetBackgroundValue(0);
+            binaryDilate->SetInput(im2change); // should this be maskImage?
+            binaryErode->SetInput(binaryDilate->GetOutput());
+            binaryDilate->SetDilateValue(1);
+            binaryErode->SetErodeValue(1);
+
+            try {
+              binaryErode->Update();
+            } catch (itk::ExceptionObject &err) {
+              std::cerr << "ExceptionObject caught !" << std::endl;
+              std::cerr << err << std::endl;
+              return EXIT_FAILURE;
             }
+            // per slice we should compute volumes here
+            float intersliceThickness = 0;
 
-            std::string newFusedSOPInstanceUID("");
-            if (uidFixedFlag.size() > 0) {
-              /*std::string derivedFusedSOPInstanceUID(SOPInstanceUID);
-              std::string endString = ".4";
-              if (derivedFusedSOPInstanceUID.substr(derivedFusedSOPInstanceUID.size() - 2, 2) == ".4")
-                endString = ".5";
-
-              // change it so that we end up with a new series instance uid - always in the same way, always at most 64 characters in length
-              derivedFusedSOPInstanceUID = derivedFusedSOPInstanceUID.substr(0, 64 - 3) + endString;
-              newFusedSOPInstanceUID = derivedFusedSOPInstanceUID; */
-              std::string str_to_hash = SOPInstanceUID + uidFixedFlag + ".4";
-              newFusedSeriesInstanceUID = get_new_uuid(str_to_hash);
-            } else {
-              gdcm::UIDGenerator uid;
-              uid.SetRoot("1.3.6.1.4.1.45037");
-              newFusedSOPInstanceUID = std::string(uid.Generate());
-            }
-
-            boost::filesystem::path p(fileNames[sliceNr]);
-            std::string filename_without_extension = (p.filename().string()).substr(0, (p.filename().string()).find_last_of("."));
-            boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "fused" + boost::filesystem::path::preferred_separator +
-                                            newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + filename_without_extension.c_str() + ".dcm";
-            if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
-              // create the output directory
-              create_directories(p_out.parent_path());
-            }
-            // it would be cool to add a filtered version of the labels as well, but that works only for a single label...  or?
-            // We don't have a split into different regions of interest, we should use connected components here as well
-            // we do that already in computeBiomarkers.
-
-            // in case we need to split the regions into connected components do this:
-            // but this does not make sense in 2D, our labels must be computed in 3D.
-            /*using ConnectedComponents = itk::ConnectedComponentImageFilter<ImageType2D, ImageType2D>;
-            ConnectedComponents::Pointer con = ConnectedComponents::New();
-            con->SetInput(binaryErode->GetOutput());
-            con->SetBackgroundValue(0);
-            con->Update(); */
-            writeSecondaryCapture(binaryErode->GetOutput(), fileNames[sliceNr], std::string(p_out.c_str()), uidFixedFlag, newFusedSeriesInstanceUID,
-                                  newFusedSOPInstanceUID, verbose, brightness_contrast_ll, brightness_contrast_ul);
-            // here is a good place to extract some measures from the masked image (mean, min, max, median, sum, intensity, histogram?)
+            // copy the values back to the im2change buffer
+            ImageType2D::Pointer cleanMask = binaryErode->GetOutput();
+            ImageType2D::PixelContainer *container3;
+            container3 = cleanMask->GetPixelContainer();
+            ImageType2D::PixelType *buffer4 = container3->GetBufferPointer();
+            memcpy(buffer2, &(buffer4[0]), size[0] * size[1] * bla);
           }
-
-          // copy the values back to the im2change buffer
-          ImageType2D::Pointer cleanMask = binaryErode->GetOutput();
-          ImageType2D::PixelContainer *container3;
-          container3 = cleanMask->GetPixelContainer();
-          ImageType2D::PixelType *buffer4 = container3->GetBufferPointer();
-          memcpy(buffer2, &(buffer4[0]), size[0] * size[1] * bla);
-
+          
           // now change something to make a new copy of that file
           int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 1;
           std::string newSOPInstanceUID = std::string("");
