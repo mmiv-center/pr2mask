@@ -2264,6 +2264,27 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1050", std::to_string(0.5));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1051", std::to_string(1));
 
+          std::string v = std::string("pr2mask ") + versionString;
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0018|1020", v);
+          // anon.Replace(gdcm::Tag(0x0018, 0x1020), v.c_str());
+
+          boost::posix_time::ptime timeLocal = boost::posix_time::second_clock::local_time();
+          char dateOfReport[9];
+          int year = timeLocal.date().year();
+          int month = timeLocal.date().month();
+          int day = timeLocal.date().day();
+          snprintf(dateOfReport, 9, "%04d%02d%02d", year, month, day);
+          std::string DateOfSecondaryCapture = std::string(dateOfReport);
+          // std::to_string(timeLocal.date().year()) + std::to_string(timeLocal.date().month()) + std::to_string(timeLocal.date().day());
+          char timeOfReport[7];
+          snprintf(timeOfReport, 7, "%02d%02d%02d", (int)(timeLocal.time_of_day().hours()), (int)(timeLocal.time_of_day().minutes()),
+                  (int)(timeLocal.time_of_day().seconds()));
+          std::string TimeOfSecondaryCapture = std::string(timeOfReport);
+          //    std::to_string(timeLocal.time_of_day().hours()) + std::to_string(timeLocal.time_of_day().minutes()) + std::to_string(timeLocal.time_of_day().seconds());
+
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0023", DateOfSecondaryCapture.c_str());
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0033", TimeOfSecondaryCapture.c_str());
+
           w->SetInput(im2change);
           // create the output filename
           // we should have a folder for each image series
