@@ -49,6 +49,8 @@ typedef struct {
   std::vector<std::string> keyImageTexts;
   std::vector<std::vector<std::string> > summary;
   std::vector<std::map<std::string, std::string> > measures;
+  std::string mask_compressed;
+  unsigned long mask_size[3];
 } Report;
 
 Report *getDefaultReportStruct();

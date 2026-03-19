@@ -103,6 +103,8 @@ Report *getDefaultReportStruct() {
   report->TitleText = std::string("MMIV.no report. Made with AI");
   report->TextTopRight = std::string("");
   report->TextTopRightLabels = std::map<int, std::string>();
+
+  report->mask_compressed = std::string("");
   return report;
 }
 
@@ -449,6 +451,31 @@ void addPrivateElements(gdcm::DataSet& ds, Report *report) {
   de3.SetByteValue(measures_str.c_str(), measures_str.size());
   ds.Insert(de3);
 
+  // and add the mask compressed as well
+  if (report->mask_compressed.size() > 0) {
+    gdcm::Tag privateTag4(0x0041, 0x1021); // Mask
+    gdcm::DataElement de4(privateTag4);
+    de4.SetVR(gdcm::VR::OB);
+    de4.SetByteValue(report->mask_compressed.c_str(), report->mask_compressed.size());
+    ds.Insert(de4);
+
+    double values[] = {
+      (double)(report->mask_size[0]), 
+      (double)(report->mask_size[1]), 
+      (double)(report->mask_size[2])
+    };
+    gdcm::Attribute<0x0041, 0x1022, gdcm::VR::DS, gdcm::VM::VM3> sizeForMask;   
+    sizeForMask.SetValues(values, 3);
+    gdcm::DataElement de5 = sizeForMask.GetAsDataElement();
+    ds.Insert(de5);
+
+    gdcm::Tag privateTag6(0x0041, 0x1023); // Mask
+    gdcm::DataElement de6(privateTag6);
+    de6.SetVR(gdcm::VR::LO);
+    std::string dataType("signed short");
+    de6.SetByteValue(dataType.c_str(), dataType.size());
+    ds.Insert(de6);
+  }
 
 /*
     // Define and add the custom data element

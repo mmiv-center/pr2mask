@@ -173,6 +173,24 @@ The structured values for biomarker recovery are contained in the json formatted
 
 This will create a new DICOM object in the /tmp/blarg/ folder as a structured report.
 
+The secondary capture report uses some private tags for the computed biomarkers and for the mask. To extract these values from the secondary capture DICOM object look for tags 
+
+ - 0x0041,0x1010 (version of pr2mask, VR: LO), 
+ - 0x0041,0x1011 (report type, VR: LO), 
+ - 0x0041,0x1020 (computed measures string in json format, VR: OB)
+ - 0x0041,0x1021 (gzipped mask array values, x as fastest running index VR: OB)
+ - 0x0041,0x1022 (size of the mask array x, y, z, VR: DS, VM: 3), and
+ - 0x0041,0x1023 (data type, e.g. "signed short").
+ 
+ To extract the mask from the report file read the tag value (here as base64) and uncompress using gunzip:
+
+```bash
+dcm2json reports.dcm | jq -r '."00411021".InlineBinary' | base64 -d > /tmp/mask_from_report.bin.gz
+gunzip /tmp/mask_from_report.bin.gz
+```
+
+To interpret the binary values you will need the dimensions of the input data and the data type (0041,1022 and 0041,1023).
+
 ### Use partial polygonal outlines for 3D segmentation
 
 The morphological contour interpolation algorithm allows us to create volume filling segmentations from a few polygonal regions (e.g. done every two slices). Create the partial segmentional mask volume first. Use the '-o' option to prevent the expensive computation of biomarkers, the '-u' option will prevent random series and image instance UIDs from being created, e.g. repeating the process will create stable UIDs based on the input and on the provided version number of the algorithm. Use MorphologicalContourInterpolation second pointing it to the generated mask volume from pr2mask.

@@ -62,7 +62,7 @@ find_package(Boost CONFIG)
 #  find_package(Boost REQUIRED COMPONENTS system filesystem)
 #endif()
 
-find_package(Boost ${boost_min_ver} REQUIRED COMPONENTS filesystem regex program_options timer date_time PATHS /opt/homebrew/lib/cmake/Boost-1.89.0/)
+find_package(Boost ${boost_min_ver} REQUIRED COMPONENTS filesystem regex program_options timer date_time iostreams PATHS /opt/homebrew/lib/cmake/Boost-1.90.0/)
 
 
 if(Boost_FOUND)

@@ -67,6 +67,8 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp> 
 #include <boost/uuid/name_generator_sha1.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 
 #include <codecvt>
 #include <locale> // wstring_convert
@@ -2012,6 +2014,27 @@ std::map<std::string, std::string> calcTextureFeatureImage(OffsetType offset, Im
   return results;
 }
 
+std::string getCompressedMaskString(MaskImageType::Pointer mask) {
+
+  MaskImageType::RegionType region = mask->GetLargestPossibleRegion();
+  MaskImageType::SizeType size = region.GetSize();
+
+  MaskImageType::PixelContainer *container = mask->GetPixelContainer();
+  MaskImageType::PixelType *buffer = container->GetBufferPointer();
+
+  unsigned int pixelMemSize = sizeof(MaskImageType::PixelType); // image is now size[0]*size[1]*size[2]*pixelMemSize in bytes
+
+  std::stringstream compressed;
+  {
+    boost::iostreams::filtering_ostream out;
+    out.push(boost::iostreams::gzip_compressor());
+    out.push(compressed);
+    out.write((char *)buffer, size[0]*size[1]*size[2]*pixelMemSize);
+  }
+
+  return compressed.str();
+}
+
 void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries, bool isMosaic) {
   if (verbose) 
     fprintf(stdout, "start computing biomarkers...\n");
@@ -2070,6 +2093,14 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
 
   MaskImageType::Pointer mask = reader->GetOutput();
   // using the above generator we can read in the image and label series again as volumes
+
+  // store the mask compressed in the report
+  report->mask_compressed = getCompressedMaskString(mask);
+  MaskImageType::RegionType region = mask->GetLargestPossibleRegion();
+  MaskImageType::SizeType size = region.GetSize();
+  report->mask_size[0] = size[0];
+  report->mask_size[1] = size[1];
+  report->mask_size[2] = size[2];  
 
   using ConnectedComponentImageFilterType = itk::ConnectedComponentImageFilter<MaskImageType, MaskImageType>;
   using I2LType = itk::LabelImageToShapeLabelMapFilter<MaskImageType, LabelMapType>;
