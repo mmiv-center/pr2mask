@@ -113,6 +113,7 @@ std::string get_new_uuid(const std::string& p_arg) {
 // contours from them.
 struct Polygon {
   std::vector<float> coords;            // the vector of pixel coordinates extracted from presentation state
+  std::string extractedFrom;            // geometry extracted from PR needs to be handeled different from geometry that comes from RTSTRUCT
   std::string ReferencedSOPInstanceUID; // the referenced SOP instance UID (identifies the image)
   std::string ReferencedSeriesInstanceUID;
   std::string StudyInstanceUID;
@@ -752,11 +753,15 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     const gdcm::Tag referencedImageSequence(0x0008, 0x1140);  // ReferencedImageSequence its inside 0x0070,0x0001
     const gdcm::Tag referencedSOPInstanceUID(0x0008, 0x1155); // ReferencedSOPInstanceUID
     const gdcm::Tag contributionDateTime(0x0018, 0xA002);     // ContributionDateTime
+    const gdcm::Tag contourImageSequence(0x3006, 0x0016);     // ContourImageSequence
+    const gdcm::Tag contourGeometricType(0x3006, 0x0042);     // ContourGeometricType
+    const gdcm::Tag numberOfContourPoints(0x3006, 0x0046);    // NumberOfContourPoints
+    const gdcm::Tag contourData(0x3006, 0x0050);              // ContourData
 
     gdcm::Attribute<0x0008, 0x0060> modalityAttr;
     if (ds.FindDataElement( gdcm::Tag(0x0008, 0x0060)))
       modalityAttr.Set(ds);
-    if (std::string(modalityAttr.GetValue()) != std::string("PR")) { // PR's might reference these
+    if (std::string(modalityAttr.GetValue()) != std::string("PR") && std::string(modalityAttr.GetValue()) != std::string("RTSTRUCT")) { // PR's and RTSTRUCT's might reference these
       // we should create a cache here for the SeriesInstanceUID the ReferencedSOPInstanceUID might point to
       gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
       seriesinstanceuidAttr.Set(ds);
@@ -775,6 +780,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
       continue;
     }
 
+    // The following code is for "PR" modality, we should support RTSTRUCT as well.
     // get the PatientID and PatientName
     gdcm::Attribute<0x0010, 0x0020> patientIDAttr;
     patientIDAttr.Set(ds);
@@ -790,38 +796,6 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     StudyInstanceUID = studyinstanceuidAttr.GetValue();
     // fprintf(stdout, " found StudyInstanceUID: %s\n", StudyInstanceUID.c_str());
 
-    // get the ContributionDateTime for Sectra from sequence 0018,a001 item 0040,a170
-    // (0018,a001) SQ (Sequence with explicit length #=1)      # 148, 1 Unknown Tag & Data
-    //  (fffe,e000) na (Item with explicit length #=5)          # 140, 1 Item
-    //    (0008,0070) LO [SECTRA]                                 #   6, 1 Unknown Tag & Data
-    //    (0008,0080) LO [-]                                      #   2, 1 Unknown Tag & Data
-    //    (0008,1010) SH [DICOM_QR_SCP]                           #  12, 1 Unknown Tag & Data
-    //    (0018,a002) DT [20240314170104]                         #  14, 1 Unknown Tag & Data
-    //    (0040,a170) SQ (Sequence with explicit length #=1)      #  62, 1 Unknown Tag & Data
-    //      (fffe,e000) na (Item with explicit length #=3)          #  54, 1 Item
-    //        (0008,0100) SH [109103]                                 #   6, 1 Unknown Tag & Data
-    //        (0008,0102) SH [DCM]                                    #   4, 1 Unknown Tag & Data
-    //        (0008,0104) LO [Modifying Equipment]                    #  20, 1 Unknown Tag & Data
-    //      (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
-    //    (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
-    //  (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
-    //(fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
-    const gdcm::DataElement &de_sectra = ds.GetDataElement(gdcm::Tag(0x0018, 0xA001));
-    // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
-    gdcm::SmartPointer<gdcm::SequenceOfItems> sqi2 = de_sectra.GetValueAsSQ();
-    if (sqi2) {
-      gdcm::SequenceOfItems::SizeType nitems = sqi2->GetNumberOfItems();
-      // fprintf(stdout, "found %lu items\n", nitems);
-      for (int itemNr = 1; itemNr <= nitems; itemNr++) { // we should create our polys at this level....
-        gdcm::Item &item = sqi2->GetItem(itemNr);
-        gdcm::DataSet &subds = item.GetNestedDataSet();
-
-        gdcm::Attribute<0x0018, 0xA002> contributionDateTimeAttr;
-        contributionDateTimeAttr.Set(subds);
-        ContributionDateTime = contributionDateTimeAttr.GetValue();
-      }
-    }
-
     // get the StudyInstanceUID
     gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
     seriesinstanceuidAttr.Set(ds);
@@ -829,195 +803,414 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     if (verbose) {
       fprintf(stdout, " \033[0;32mfound\033[0m SeriesInstanceUID [%s]: \033[0;33m%s\033[0m\n", modalityAttr.GetValue().c_str(), SeriesInstanceUID.c_str());
     }
-    const gdcm::DataElement &de = ds.GetDataElement(gdcm::Tag(0x0070, 0x0001));
-    // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
-    gdcm::SmartPointer<gdcm::SequenceOfItems> sqi = de.GetValueAsSQ();
-    if (sqi) {
 
-      /* (0070,0009) SQ (Sequence with explicit length #=1)      # 180, 1 GraphicObjectSequence
-            (fffe,e000) na (Item with explicit length #=6)          # 172, 1 Item
-              (0070,0005) CS [PIXEL]                                  #   6, 1 GraphicAnnotationUnits
-              (0070,0020) US 2                                        #   2, 1 GraphicDimensions
-              (0070,0021) US 13                                       #   2, 1 NumberOfGraphicPoints
-              (0070,0022) FL 92\113\99\129\110\142\132\146\153\135\164\118\172\98\162\75\132\67... # 104,26 GraphicData
-              (0070,0023) CS [POLYLINE]                               #   8, 1 GraphicType
-              (0070,0024) CS [N]                                      #   2, 1 GraphicFilled
-            (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
-          (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
-          */
+    // The following code is specific for PR
+    if (std::string(modalityAttr.GetValue()) == std::string("PR")) {
 
-      gdcm::SequenceOfItems::SizeType nitems = sqi->GetNumberOfItems();
-      // fprintf(stdout, "found %lu items\n", nitems);
-      for (int itemNr = 1; itemNr <= nitems; itemNr++) { // we should create our polys at this level....
 
-        Polygon poly;
-        poly.StudyInstanceUID = boost::algorithm::trim_copy(StudyInstanceUID);
-        poly.ContributionDateTime = boost::algorithm::trim_copy(ContributionDateTime);
-        // the string above might contain a utf-8 version of a null character
-        if (poly.StudyInstanceUID.back() == '\0')
-          poly.StudyInstanceUID.replace(poly.StudyInstanceUID.end() - 1, poly.StudyInstanceUID.end(), "");
-        poly.SeriesInstanceUID = boost::algorithm::trim_copy(SeriesInstanceUID);
-        // the string above might contain a utf-8 version of a null character
-        if (poly.SeriesInstanceUID.back() == '\0')
-          poly.SeriesInstanceUID.replace(poly.SeriesInstanceUID.end() - 1, poly.SeriesInstanceUID.end(), "");
-        poly.Filename = filename;
-        poly.PatientID = PatientID;
-        if (poly.StudyInstanceUID.back() == '\0')
-          poly.PatientID.replace(poly.PatientID.end() - 1, poly.PatientID.end(), "");
-        poly.PatientName = PatientName;
-        if (poly.PatientName.back() == '\0')
-          poly.PatientName.replace(poly.PatientName.end() - 1, poly.PatientName.end(), "");
+      // get the ContributionDateTime for Sectra from sequence 0018,a001 item 0040,a170
+      // (0018,a001) SQ (Sequence with explicit length #=1)      # 148, 1 Unknown Tag & Data
+      //  (fffe,e000) na (Item with explicit length #=5)          # 140, 1 Item
+      //    (0008,0070) LO [SECTRA]                                 #   6, 1 Unknown Tag & Data
+      //    (0008,0080) LO [-]                                      #   2, 1 Unknown Tag & Data
+      //    (0008,1010) SH [DICOM_QR_SCP]                           #  12, 1 Unknown Tag & Data
+      //    (0018,a002) DT [20240314170104]                         #  14, 1 Unknown Tag & Data
+      //    (0040,a170) SQ (Sequence with explicit length #=1)      #  62, 1 Unknown Tag & Data
+      //      (fffe,e000) na (Item with explicit length #=3)          #  54, 1 Item
+      //        (0008,0100) SH [109103]                                 #   6, 1 Unknown Tag & Data
+      //        (0008,0102) SH [DCM]                                    #   4, 1 Unknown Tag & Data
+      //        (0008,0104) LO [Modifying Equipment]                    #  20, 1 Unknown Tag & Data
+      //      (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+      //    (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+      //  (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+      //(fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+      const gdcm::DataElement &de_sectra = ds.GetDataElement(gdcm::Tag(0x0018, 0xA001));
+      // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
+      gdcm::SmartPointer<gdcm::SequenceOfItems> sqi2 = de_sectra.GetValueAsSQ();
+      if (sqi2) {
+        gdcm::SequenceOfItems::SizeType nitems = sqi2->GetNumberOfItems();
+        // fprintf(stdout, "found %lu items\n", nitems);
+        for (int itemNr = 1; itemNr <= nitems; itemNr++) { // we should create our polys at this level....
+          gdcm::Item &item = sqi2->GetItem(itemNr);
+          gdcm::DataSet &subds = item.GetNestedDataSet();
 
-        gdcm::Item &item = sqi->GetItem(itemNr);
-        gdcm::DataSet &subds = item.GetNestedDataSet();
-
-        // lookup the ReferencedImageSequence
-        /*    (0008,1140) SQ (Sequence with explicit length #=1)      # 114, 1 ReferencedImageSequence
-                (fffe,e000) na (Item with explicit length #=2)          # 106, 1 Item
-                  (0008,1150) UI =MRImageStorage                          #  26, 1 ReferencedSOPClassUID
-                  (0008,1155) UI [1.3.6.1.4.1.45037.091a6b29babb817c5ffcc7199d0c0de4cf9d52c155360] #  64, 1 ReferencedSOPInstanceUID
-                (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
-              (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
-        */
-        if (!subds.FindDataElement(referencedImageSequence)) {
-          if (verbose)
-            fprintf(stdout, " %d does not have a referenced image sequence\n", itemNr);
-          continue;
-        } else {
-          if (verbose)
-            fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a ReferencedImageSequence\n", itemNr);
-        }
-        const gdcm::DataElement &de3 = subds.GetDataElement(referencedImageSequence);
-        gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
-        gdcm::SequenceOfItems::SizeType nitems3 = sqiReferencedImageSequence->GetNumberOfItems();
-        // fprintf(stdout, " referenced image sequence with %lu item(-s)\n", nitems3);
-        for (int itemNr2 = 1; itemNr2 <= nitems3; itemNr2++) {
-          gdcm::Item &item3 = sqiReferencedImageSequence->GetItem(itemNr2);
-          gdcm::DataSet &subds3 = item3.GetNestedDataSet();
-          if (!subds3.FindDataElement(referencedSOPInstanceUID)) {
-            if (verbose)
-              fprintf(stdout, " %d no referencedSOPInstanceUID\n", itemNr);
-            continue;
-          }
-          const gdcm::DataElement &deReferencedSOPInstanceUID = subds3.GetDataElement(referencedSOPInstanceUID);
-          const gdcm::ByteValue *bv = deReferencedSOPInstanceUID.GetByteValue();
-          std::string refUID(bv->GetPointer(), bv->GetLength());
-          if (verbose)
-            fprintf(stdout, " \033[0;32mfound\033[0m: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
-          poly.ReferencedSOPInstanceUID = boost::algorithm::trim_copy(refUID);
-          // the string above might contain a utf-8 version of a null character
-          if (poly.ReferencedSOPInstanceUID.back() == '\0')
-            poly.ReferencedSOPInstanceUID.replace(poly.ReferencedSOPInstanceUID.end() - 1, poly.ReferencedSOPInstanceUID.end(), "");
-        }
-
-        //
-        // this is for items in 0070,0008 textObjectSequence
-        //
-        if (subds.FindDataElement(textObjectSequence)) { // optional
-          /*
-              (0070,0008) SQ (Sequence with explicit length #=1)      # 150, 1 TextObjectSequence
-                (fffe,e000) na (Item with explicit length #=4)          # 142, 1 Item
-                  (0070,0004) CS [PIXEL]                                  #   6, 1 AnchorPointAnnotationUnits
-                  (0070,0006) ST [Min/Max: 7 / 349
-          Mean: 132, Deviation: 103
-          Total: 657?860
-          Pixel... #  94, 1 UnformattedTextValue
-                  (0070,0014) FL 190.5\108.5                              #   8, 2 AnchorPoint
-                  (0070,0015) CS [Y]                                      #   2, 1 AnchorPointVisibility
-                (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
-              (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
-          */
-          const gdcm::DataElement &de2 = subds.GetDataElement(textObjectSequence);
-          gdcm::SmartPointer<gdcm::SequenceOfItems> sqiTextObjectSequence = de2.GetValueAsSQ();
-          gdcm::SequenceOfItems::SizeType nitems2 = sqiTextObjectSequence->GetNumberOfItems();
-          if (verbose)
-            fprintf(stdout, " unformatted text object sequence with %lu item%s\n", nitems2, nitems2!=1?"s":"");
-          for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
-            gdcm::Item &item2 = sqiTextObjectSequence->GetItem(itemNr2);
-            gdcm::DataSet &subds2 = item2.GetNestedDataSet();
-            if (!subds2.FindDataElement(unformattedTextValue)) {
-              if (verbose)
-                fprintf(stdout, " %d no unformatted text value\n", itemNr2);
-              continue;
-            }
-            const gdcm::DataElement &deUnformattedTextValue = subds2.GetDataElement(unformattedTextValue);
-            const gdcm::ByteValue *bv = deUnformattedTextValue.GetByteValue();
-            std::string uTV(bv->GetPointer(), bv->GetLength());
-            poly.UnformattedTextValue = boost::algorithm::trim_copy(uTV);
-          }
-        }
-
-        //
-        // this is for items in 0070,0001, now we need to look for 0070,0009
-        //
-        if (!subds.FindDataElement(graphicObjectSequence)) {
-          // fprintf(stdout, " %d does not have GraphicObjectSequence\n", itemNr);
-          continue;
-        } else {
-          // fprintf(stdout, " %d \033[0;32mfound\033[0m a GraphicObjectSequence\n", itemNr);
-        }
-        const gdcm::DataElement &de2 = subds.GetDataElement(graphicObjectSequence);
-        gdcm::SmartPointer<gdcm::SequenceOfItems> sqiGraphicObjectSequence = de2.GetValueAsSQ();
-        gdcm::SequenceOfItems::SizeType nitems2 = sqiGraphicObjectSequence->GetNumberOfItems();
-        if (verbose)
-          fprintf(stdout, " graphic object sequence with %lu item%s\n", nitems2, nitems2!=1?"s":"");
-        for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
-          gdcm::Item &item2 = sqiGraphicObjectSequence->GetItem(itemNr2);
-          gdcm::DataSet &subds2 = item2.GetNestedDataSet();
-          if (!subds2.FindDataElement(graphicType)) {
-            if (verbose)
-              fprintf(stdout, " %d no graphic type\n", itemNr);
-            continue;
-          }
-          const gdcm::DataElement &deGraphicType = subds2.GetDataElement(graphicType);
-          const gdcm::ByteValue *bv = deGraphicType.GetByteValue();
-          std::string gT(bv->GetPointer(), bv->GetLength());
-
-          if (!subds2.FindDataElement(numberOfGraphicPoints)) {
-            if (verbose)
-              fprintf(stdout, " %d no number of graphic points\n", itemNr);
-            continue;
-          }
-          const gdcm::DataElement &deNumberOfGraphicPoints = subds2.GetDataElement(numberOfGraphicPoints);
-          // std::string nGP = gdcm::DirectoryHelper::GetStringValueFromTag(numberOfGraphicPoints, subds2);
-          const gdcm::ByteValue *bv2 = deNumberOfGraphicPoints.GetByteValue();
-          std::string nGP(bv2->GetPointer(), bv2->GetLength());
-          int numberOfPoints = *(nGP.c_str());
-
-          if (!subds2.FindDataElement(graphicData)) {
-            if (verbose)
-              fprintf(stdout, " %d no graphic data\n", itemNr);
-            continue;
-          }
-          const gdcm::DataElement &deGraphicData = subds2.GetDataElement(graphicData);
-          const gdcm::ByteValue *bv3 = deGraphicData.GetByteValue();
-          std::string gD(bv3->GetPointer(), bv3->GetLength());
-
-          // we can read the values now based on the value representation (VR::FL is single float)
-          gdcm::Element<gdcm::VR::FL, gdcm::VM::VM1_n> elwc;
-          gdcm::VR vr = gdcm::VR::FL;
-          unsigned int vrsize = vr.GetSizeof();
-          unsigned int count = gD.size() / vrsize;
-          elwc.SetLength(count * vrsize);
-          std::stringstream ss1;
-          ss1.str(gD);
-          elwc.Read(ss1);
-          poly.coords.resize(elwc.GetLength());
-          for (unsigned int i = 0; i < elwc.GetLength(); ++i) {
-            poly.coords[i] = elwc.GetValue(i);
-          }
-          // now store the poly
-          storage->push_back(poly);
-          if (verbose) {
-            std::string utv = poly.UnformattedTextValue;
-            stripUnicode(utv);
-            fprintf(stdout, " added poly with %lu points (\"%s\")\n", poly.coords.size(), utv.c_str());
-          }
+          gdcm::Attribute<0x0018, 0xA002> contributionDateTimeAttr;
+          contributionDateTimeAttr.Set(subds);
+          ContributionDateTime = contributionDateTimeAttr.GetValue();
         }
       }
-    } else {
-      if (verbose)
-        fprintf(stdout, "\033[0;31mWarning\033[0m: no GraphicAnnotationSequence (0070,0001) in %s\n", filename.c_str());
+
+      const gdcm::DataElement &de = ds.GetDataElement(gdcm::Tag(0x0070, 0x0001));
+      // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
+      gdcm::SmartPointer<gdcm::SequenceOfItems> sqi = de.GetValueAsSQ();
+      if (sqi) {
+
+        /* (0070,0009) SQ (Sequence with explicit length #=1)      # 180, 1 GraphicObjectSequence
+              (fffe,e000) na (Item with explicit length #=6)          # 172, 1 Item
+                (0070,0005) CS [PIXEL]                                  #   6, 1 GraphicAnnotationUnits
+                (0070,0020) US 2                                        #   2, 1 GraphicDimensions
+                (0070,0021) US 13                                       #   2, 1 NumberOfGraphicPoints
+                (0070,0022) FL 92\113\99\129\110\142\132\146\153\135\164\118\172\98\162\75\132\67... # 104,26 GraphicData
+                (0070,0023) CS [POLYLINE]                               #   8, 1 GraphicType
+                (0070,0024) CS [N]                                      #   2, 1 GraphicFilled
+              (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+            (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+            */
+
+        gdcm::SequenceOfItems::SizeType nitems = sqi->GetNumberOfItems();
+        // fprintf(stdout, "found %lu items\n", nitems);
+        for (int itemNr = 1; itemNr <= nitems; itemNr++) { // we should create our polys at this level....
+
+          Polygon poly;
+          poly.StudyInstanceUID = boost::algorithm::trim_copy(StudyInstanceUID);
+          poly.ContributionDateTime = boost::algorithm::trim_copy(ContributionDateTime);
+          // the string above might contain a utf-8 version of a null character
+          if (poly.StudyInstanceUID.back() == '\0')
+            poly.StudyInstanceUID.replace(poly.StudyInstanceUID.end() - 1, poly.StudyInstanceUID.end(), "");
+          poly.SeriesInstanceUID = boost::algorithm::trim_copy(SeriesInstanceUID);
+          // the string above might contain a utf-8 version of a null character
+          if (poly.SeriesInstanceUID.back() == '\0')
+            poly.SeriesInstanceUID.replace(poly.SeriesInstanceUID.end() - 1, poly.SeriesInstanceUID.end(), "");
+          poly.Filename = filename;
+          poly.PatientID = PatientID;
+          if (poly.StudyInstanceUID.back() == '\0')
+            poly.PatientID.replace(poly.PatientID.end() - 1, poly.PatientID.end(), "");
+          poly.PatientName = PatientName;
+          if (poly.PatientName.back() == '\0')
+            poly.PatientName.replace(poly.PatientName.end() - 1, poly.PatientName.end(), "");
+
+          gdcm::Item &item = sqi->GetItem(itemNr);
+          gdcm::DataSet &subds = item.GetNestedDataSet();
+
+          // lookup the ReferencedImageSequence
+          /*    (0008,1140) SQ (Sequence with explicit length #=1)      # 114, 1 ReferencedImageSequence
+                  (fffe,e000) na (Item with explicit length #=2)          # 106, 1 Item
+                    (0008,1150) UI =MRImageStorage                          #  26, 1 ReferencedSOPClassUID
+                    (0008,1155) UI [1.3.6.1.4.1.45037.091a6b29babb817c5ffcc7199d0c0de4cf9d52c155360] #  64, 1 ReferencedSOPInstanceUID
+                  (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+                (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+          */
+          if (!subds.FindDataElement(referencedImageSequence)) {
+            if (verbose)
+              fprintf(stdout, " %d does not have a referenced image sequence\n", itemNr);
+            continue;
+          } else {
+            if (verbose)
+              fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a ReferencedImageSequence\n", itemNr);
+          }
+          const gdcm::DataElement &de3 = subds.GetDataElement(referencedImageSequence);
+          gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
+          gdcm::SequenceOfItems::SizeType nitems3 = sqiReferencedImageSequence->GetNumberOfItems();
+          // fprintf(stdout, " referenced image sequence with %lu item(-s)\n", nitems3);
+          for (int itemNr2 = 1; itemNr2 <= nitems3; itemNr2++) {
+            gdcm::Item &item3 = sqiReferencedImageSequence->GetItem(itemNr2);
+            gdcm::DataSet &subds3 = item3.GetNestedDataSet();
+            if (!subds3.FindDataElement(referencedSOPInstanceUID)) {
+              if (verbose)
+                fprintf(stdout, " %d no referencedSOPInstanceUID\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deReferencedSOPInstanceUID = subds3.GetDataElement(referencedSOPInstanceUID);
+            const gdcm::ByteValue *bv = deReferencedSOPInstanceUID.GetByteValue();
+            std::string refUID(bv->GetPointer(), bv->GetLength());
+            if (verbose)
+              fprintf(stdout, " \033[0;32mfound\033[0m: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
+            poly.ReferencedSOPInstanceUID = boost::algorithm::trim_copy(refUID);
+            // the string above might contain a utf-8 version of a null character
+            if (poly.ReferencedSOPInstanceUID.back() == '\0')
+              poly.ReferencedSOPInstanceUID.replace(poly.ReferencedSOPInstanceUID.end() - 1, poly.ReferencedSOPInstanceUID.end(), "");
+          }
+
+          //
+          // this is for items in 0070,0008 textObjectSequence
+          //
+          if (subds.FindDataElement(textObjectSequence)) { // optional
+            /*
+                (0070,0008) SQ (Sequence with explicit length #=1)      # 150, 1 TextObjectSequence
+                  (fffe,e000) na (Item with explicit length #=4)          # 142, 1 Item
+                    (0070,0004) CS [PIXEL]                                  #   6, 1 AnchorPointAnnotationUnits
+                    (0070,0006) ST [Min/Max: 7 / 349
+            Mean: 132, Deviation: 103
+            Total: 657?860
+            Pixel... #  94, 1 UnformattedTextValue
+                    (0070,0014) FL 190.5\108.5                              #   8, 2 AnchorPoint
+                    (0070,0015) CS [Y]                                      #   2, 1 AnchorPointVisibility
+                  (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+                (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+            */
+            const gdcm::DataElement &de2 = subds.GetDataElement(textObjectSequence);
+            gdcm::SmartPointer<gdcm::SequenceOfItems> sqiTextObjectSequence = de2.GetValueAsSQ();
+            gdcm::SequenceOfItems::SizeType nitems2 = sqiTextObjectSequence->GetNumberOfItems();
+            if (verbose)
+              fprintf(stdout, " unformatted text object sequence with %lu item%s\n", nitems2, nitems2!=1?"s":"");
+            for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
+              gdcm::Item &item2 = sqiTextObjectSequence->GetItem(itemNr2);
+              gdcm::DataSet &subds2 = item2.GetNestedDataSet();
+              if (!subds2.FindDataElement(unformattedTextValue)) {
+                if (verbose)
+                  fprintf(stdout, " %d no unformatted text value\n", itemNr2);
+                continue;
+              }
+              const gdcm::DataElement &deUnformattedTextValue = subds2.GetDataElement(unformattedTextValue);
+              const gdcm::ByteValue *bv = deUnformattedTextValue.GetByteValue();
+              std::string uTV(bv->GetPointer(), bv->GetLength());
+              poly.UnformattedTextValue = boost::algorithm::trim_copy(uTV);
+            }
+          }
+
+          //
+          // this is for items in 0070,0001, now we need to look for 0070,0009
+          //
+          if (!subds.FindDataElement(graphicObjectSequence)) {
+            // fprintf(stdout, " %d does not have GraphicObjectSequence\n", itemNr);
+            continue;
+          } else {
+            // fprintf(stdout, " %d \033[0;32mfound\033[0m a GraphicObjectSequence\n", itemNr);
+          }
+          const gdcm::DataElement &de2 = subds.GetDataElement(graphicObjectSequence);
+          gdcm::SmartPointer<gdcm::SequenceOfItems> sqiGraphicObjectSequence = de2.GetValueAsSQ();
+          gdcm::SequenceOfItems::SizeType nitems2 = sqiGraphicObjectSequence->GetNumberOfItems();
+          if (verbose)
+            fprintf(stdout, " graphic object sequence with %lu item%s\n", nitems2, nitems2!=1?"s":"");
+          for (int itemNr2 = 1; itemNr2 <= nitems2; itemNr2++) {
+            gdcm::Item &item2 = sqiGraphicObjectSequence->GetItem(itemNr2);
+            gdcm::DataSet &subds2 = item2.GetNestedDataSet();
+            if (!subds2.FindDataElement(graphicType)) {
+              if (verbose)
+                fprintf(stdout, " %d no graphic type\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deGraphicType = subds2.GetDataElement(graphicType);
+            const gdcm::ByteValue *bv = deGraphicType.GetByteValue();
+            std::string gT(bv->GetPointer(), bv->GetLength());
+
+            if (!subds2.FindDataElement(numberOfGraphicPoints)) {
+              if (verbose)
+                fprintf(stdout, " %d no number of graphic points\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deNumberOfGraphicPoints = subds2.GetDataElement(numberOfGraphicPoints);
+            // std::string nGP = gdcm::DirectoryHelper::GetStringValueFromTag(numberOfGraphicPoints, subds2);
+            const gdcm::ByteValue *bv2 = deNumberOfGraphicPoints.GetByteValue();
+            std::string nGP(bv2->GetPointer(), bv2->GetLength());
+            int numberOfPoints = *(nGP.c_str());
+
+            if (!subds2.FindDataElement(graphicData)) {
+              if (verbose)
+                fprintf(stdout, " %d no graphic data\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deGraphicData = subds2.GetDataElement(graphicData);
+            const gdcm::ByteValue *bv3 = deGraphicData.GetByteValue();
+            std::string gD(bv3->GetPointer(), bv3->GetLength());
+
+            // we can read the values now based on the value representation (VR::FL is single float)
+            gdcm::Element<gdcm::VR::FL, gdcm::VM::VM1_n> elwc;
+            gdcm::VR vr = gdcm::VR::FL;
+            unsigned int vrsize = vr.GetSizeof();
+            unsigned int count = gD.size() / vrsize;
+            elwc.SetLength(count * vrsize);
+            std::stringstream ss1;
+            ss1.str(gD);
+            elwc.Read(ss1);
+            poly.coords.resize(elwc.GetLength());
+            for (unsigned int i = 0; i < elwc.GetLength(); ++i) {
+              poly.coords[i] = elwc.GetValue(i);
+            }
+            poly.extractedFrom = "PR";
+            // now store the poly
+            storage->push_back(poly);
+            if (verbose) {
+              std::string utv = poly.UnformattedTextValue;
+              stripUnicode(utv);
+              fprintf(stdout, " added poly with %lu points (\"%s\")\n", poly.coords.size(), utv.c_str());
+            }
+          }
+        }
+      } else {
+        if (verbose)
+          fprintf(stdout, "\033[0;31mWarning\033[0m: no GraphicAnnotationSequence (0070,0001) in %s\n", filename.c_str());
+      }
+    } else if (std::string(modalityAttr.GetValue()) == std::string("RTSTRUCT")) {
+      // This is from a GammaPlan structured report
+      //(3006,0039) SQ (Sequence with explicit length #=1)      # 27266, 1 ROIContourSequence
+      //  (fffe,e000) na (Item with explicit length #=3)          # 27258, 1 Item
+      //    (3006,002a) IS [255\0\255]                              #  10, 3 ROIDisplayColor
+      //    (3006,0040) SQ (Sequence with explicit length #=11)     # 27222, 1 ContourSequence
+      //      (fffe,e000) na (Item with explicit length #=4)          # 742, 1 Item
+      //        (3006,0016) SQ (Sequence with explicit length #=1)      # 110, 1 ContourImageSequence
+      //          (fffe,e000) na (Item with explicit length #=2)          # 102, 1 Item
+      //            (0008,1150) UI =MRImageStorage                          #  26, 1 ReferencedSOPClassUID
+      //            (0008,1155) UI [1.2.840.113619.2.311.291297276552840453996556143898432101230] #  60, 1 ReferencedSOPInstanceUID
+      //          (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+      //        (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+      //        (3006,0042) CS [CLOSED_PLANAR]                          #  14, 1 ContourGeometricType
+      //        (3006,0046) IS [16]                                     #   2, 1 NumberOfContourPoints
+      //        (3006,0050) DS [-14.9715973\-0.611151123\-23.7536011\-14.7715973\-0.911151123\-23.... # 584,48 ContourData
+      //      (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+      //      (fffe,e000) na (Item with explicit length #=4)          # 1090, 1 Item
+      //        (3006,0016) SQ (Sequence with explicit length #=1)      # 110, 1 ContourImageSequence
+      //          (fffe,e000) na (Item with explicit length #=2)          # 102, 1 Item
+      //            (0008,1150) UI =MRImageStorage                          #  26, 1 ReferencedSOPClassUID
+      //            (0008,1155) UI [1.2.840.113619.2.311.195967307113154346520197723647235647212] #  60, 1 ReferencedSOPInstanceUID
+      //          (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+      //        (fffe,e0dd) na (SequenceDelimitationItem for re-encod.) #   0, 0 SequenceDelimitationItem
+      //        (3006,0042) CS [CLOSED_PLANAR]                          #  14, 1 ContourGeometricType
+      //        (3006,0046) IS [26]                                     #   2, 1 NumberOfContourPoints
+      //        (3006,0050) DS [-15.5715973\-0.511151123\-24.7536011\-15.3715973\-1.11115112\-24.7... # 932,78 ContourData
+      //      (fffe,e00d) na (ItemDelimitationItem for re-encoding)   #   0, 0 ItemDelimitationItem
+      // ...
+
+      const gdcm::DataElement &de = ds.GetDataElement(gdcm::Tag(0x3006, 0x0039));
+      // SequenceOfItems * sqi = (SequenceOfItems*)de.GetSequenceOfItems();
+      gdcm::SmartPointer<gdcm::SequenceOfItems> sqi = de.GetValueAsSQ();
+      if (sqi) {
+        gdcm::SequenceOfItems::SizeType nitems = sqi->GetNumberOfItems();
+        // number of ROIContourSequence items (masks) in this RTSTRUCT
+        // What do we do if we find more than one? We just use the first one, but we should warn about this.
+        if (nitems > 1) {
+          if (verbose) {
+            fprintf(stdout, " \033[0;31mWarning\033[0m: found more than one ROIContourSequence in %s, only the first one will be used\n", filename.c_str());
+          }
+        }
+        int usedROIContourSequenceItem = 1;
+
+        gdcm::Item &roiContourSequenceItem = sqi->GetItem(usedROIContourSequenceItem);
+        gdcm::DataSet &subds = roiContourSequenceItem.GetNestedDataSet();
+       
+        // we want to look into the ContourSequence (3006,0040) to find the contour data
+        const gdcm::DataElement &de2 = subds.GetDataElement(gdcm::Tag(0x3006, 0x0040)); // a CountourSequence
+        gdcm::SmartPointer<gdcm::SequenceOfItems> sqi2 = de2.GetValueAsSQ();
+        if (sqi2) {
+          gdcm::SequenceOfItems::SizeType nitems2 = sqi2->GetNumberOfItems();
+
+          for (int itemNr = 1; itemNr <= nitems2; itemNr++) { // each item is a ContourImageSequence
+
+            Polygon poly;
+            poly.StudyInstanceUID = boost::algorithm::trim_copy(StudyInstanceUID);
+            poly.ContributionDateTime = boost::algorithm::trim_copy(ContributionDateTime);
+            // the string above might contain a utf-8 version of a null character
+            if (poly.StudyInstanceUID.back() == '\0')
+              poly.StudyInstanceUID.replace(poly.StudyInstanceUID.end() - 1, poly.StudyInstanceUID.end(), "");
+            poly.SeriesInstanceUID = boost::algorithm::trim_copy(SeriesInstanceUID);
+            // the string above might contain a utf-8 version of a null character
+            if (poly.SeriesInstanceUID.back() == '\0')
+              poly.SeriesInstanceUID.replace(poly.SeriesInstanceUID.end() - 1, poly.SeriesInstanceUID.end(), "");
+            poly.Filename = filename;
+            poly.PatientID = PatientID;
+            if (poly.StudyInstanceUID.back() == '\0')
+              poly.PatientID.replace(poly.PatientID.end() - 1, poly.PatientID.end(), "");
+            poly.PatientName = PatientName;
+            if (poly.PatientName.back() == '\0')
+              poly.PatientName.replace(poly.PatientName.end() - 1, poly.PatientName.end(), "");
+
+            gdcm::Item &item = sqi2->GetItem(itemNr);
+            gdcm::DataSet &subds2 = item.GetNestedDataSet();
+
+            // (3006,0016) SQ (Sequence with explicit length #=1)      # 110, 1 ContourImageSequence
+            if (!subds2.FindDataElement(contourImageSequence)) {
+              if (verbose)
+                fprintf(stdout, " %d does not have a contour image sequence\n", itemNr);
+              continue;
+            } else {
+              if (verbose)
+                fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a ContourImageSequence\n", itemNr);
+            }
+
+            const gdcm::DataElement &de3 = subds2.GetDataElement(contourImageSequence);
+            gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
+            gdcm::SequenceOfItems::SizeType nitems3 = sqiReferencedImageSequence->GetNumberOfItems();
+            // fprintf(stdout, " referenced image sequence with %lu item(-s)\n", nitems3);
+            // there should be a single item here
+            for (int itemNr2 = 1; itemNr2 <= nitems3; itemNr2++) {
+              gdcm::Item &item3 = sqiReferencedImageSequence->GetItem(itemNr2);
+              gdcm::DataSet &subds3 = item3.GetNestedDataSet();
+              if (!subds3.FindDataElement(referencedSOPInstanceUID)) {
+                if (verbose)
+                  fprintf(stdout, " %d no referencedSOPInstanceUID\n", itemNr2);
+                continue;
+              }
+              const gdcm::DataElement &deReferencedSOPInstanceUID = subds3.GetDataElement(referencedSOPInstanceUID);
+              const gdcm::ByteValue *bv = deReferencedSOPInstanceUID.GetByteValue();
+              std::string refUID(bv->GetPointer(), bv->GetLength());
+              if (verbose)
+                fprintf(stdout, " \033[0;32mfound\033[0m: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
+              poly.ReferencedSOPInstanceUID = boost::algorithm::trim_copy(refUID);
+              // the string above might contain a utf-8 version of a null character
+              if (poly.ReferencedSOPInstanceUID.back() == '\0')
+                poly.ReferencedSOPInstanceUID.replace(poly.ReferencedSOPInstanceUID.end() - 1, poly.ReferencedSOPInstanceUID.end(), "");
+            }
+            // ContourGeometricType (3006,0042) CS [CLOSED_PLANAR]                          #  14, 1 ContourGeometricType
+            if (!subds2.FindDataElement(contourGeometricType)) {
+              if (verbose)                
+                fprintf(stdout, " %d no contour geometric type\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deContourGeometricType = subds2.GetDataElement(contourGeometricType);
+            const gdcm::ByteValue *bv = deContourGeometricType.GetByteValue();
+            std::string cGT(bv->GetPointer(), bv->GetLength());
+            if (verbose)              
+              fprintf(stdout, " \033[0;32mfound\033[0m: %s as ContourGeometricType\n", cGT.c_str());
+
+            // NumberOfContourPoints (3006,0046) IS [16]                                     #   2, 1 NumberOfContourPoints
+            if (!subds2.FindDataElement(numberOfContourPoints)) {
+
+              if (verbose)
+                fprintf(stdout, " %d no number of contour points\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deNumberOfContourPoints = subds2.GetDataElement(numberOfContourPoints);
+            const gdcm::ByteValue *bv2 = deNumberOfContourPoints.GetByteValue();
+            std::string nCP(bv2->GetPointer(), bv2->GetLength());
+            int numberOfPoints = std::stoi(nCP);
+            if (verbose)              
+              fprintf(stdout, " \033[0;32mfound\033[0m: %d as NumberOfContourPoints\n", numberOfPoints);
+
+            // ContourData (3006,0050) DS [-14.9715973\-0.611151123\-23.7536011\-14.7715973\-0.911151123\-23.... # 584,48 ContourData
+            
+            if (!subds2.FindDataElement(contourData)) {
+              if (verbose)
+                fprintf(stdout, " %d no contour data\n", itemNr);
+              continue;
+            }
+            const gdcm::DataElement &deContourData = subds2.GetDataElement(contourData);
+            const gdcm::ByteValue *bv3 = deContourData.GetByteValue();
+            std::string cD(bv3->GetPointer(), bv3->GetLength());
+
+            gdcm::Element<gdcm::VR::DS, gdcm::VM::VM1_n> elwc;
+            gdcm::VR vr = gdcm::VR::DS;
+            unsigned int vrsize = vr.GetSizeof();
+            unsigned int count = cD.size() / vrsize;
+            elwc.SetLength(count * vrsize);
+            std::stringstream ss1;
+            ss1.str(cD);
+            elwc.Read(ss1);
+            // the coordinates are in 3D now, we only want the coordinates in the plane of the image, is it sufficient to just take the first two coordinates?
+            // also the coordinates are floating point so not in pixel, should we convert them to pixel coordinates (as float) based on the image origin and spacing?
+            poly.coords.resize(numberOfPoints*2); // we only take the first two coordinates of each point
+            for (unsigned int i = 0; i < numberOfPoints*3; i+=3) {
+              poly.coords[i/3*2] = elwc.GetValue(i);
+              poly.coords[i/3*2+1] = elwc.GetValue(i+1);
+            }
+            poly.extractedFrom = "RTSTRUCT";
+
+            poly.UnformattedTextValue = std::string("ContourGeometricType: " + cGT + ", NumberOfContourPoints: " + nCP);
+            // now store the poly
+            storage->push_back(poly);
+            if (verbose) {
+              std::string utv = poly.UnformattedTextValue;
+              stripUnicode(utv);
+              fprintf(stdout, " added poly with %lu points (\"%s\")\n", poly.coords.size(), utv.c_str());
+            }
+
+
+          }
+        } else {
+          if (verbose)
+            fprintf(stdout, "\033[0;31mWarning\033[0m: no ContourSequence (3006,0040) in %s\n", filename.c_str());
+        }
+      }
+
     }
   }
 
@@ -1081,11 +1274,17 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
         y = mask->GetLargestPossibleRegion().GetSize()[1] - 1;
 
       // center of the first pixel is at originx and originy
-      PT floatIndex;
-      ImageType2D::IndexType index = {x, y};
-      lmask->TransformIndexToPhysicalPoint(index, floatIndex);
-      v0[0] = floatIndex[0];
-      v0[1] = floatIndex[1];
+      if (storage[storageIdx].extractedFrom == "PR") {
+        PT floatIndex;
+        ImageType2D::IndexType index = {x, y};
+        lmask->TransformIndexToPhysicalPoint(index, floatIndex);
+        v0[0] = floatIndex[0];
+        v0[1] = floatIndex[1];
+      } else {
+        // for RTSTRUCT the coordinates are in physical space, no conversion is needed
+        v0[0] = storage[storageIdx].coords[j];
+        v0[1] = storage[storageIdx].coords[j+1];
+      }
       //v0[0] = (originx) + spacingx * (x);
       //v0[1] = (originy) + spacingy * (y);
       inputPolyline->AddVertex(v0);
@@ -1637,7 +1836,7 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  std::string versionString = std::string("0.0.6.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
+  std::string versionString = std::string("0.0.7.") + boost::replace_all_copy(std::string(__DATE__), " ", ".");
   if (versionString.find("..") != std::string::npos)
     versionString.replace(versionString.find(".."), 2, ".");
   command.SetVersion(versionString.c_str());
@@ -2004,7 +2203,11 @@ int main(int argc, char *argv[]) {
             // we should have a folder for each image series
             boost::filesystem::path p(fileNames[sliceNr]);
             boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "images" + boost::filesystem::path::preferred_separator +
-                                            seriesIdentifier + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                            seriesIdentifier + boost::filesystem::path::preferred_separator + p.filename().c_str();
+            if (p_out.extension() != ".dcm") {
+              p_out += ".dcm";
+            }
+
             if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
               // create the output directory
               create_directories(p_out.parent_path());
@@ -2227,7 +2430,11 @@ int main(int argc, char *argv[]) {
 
             boost::filesystem::path p(fileNames[sliceNr]);
             boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "fused" + boost::filesystem::path::preferred_separator +
-                                            newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                            newFusedSeriesInstanceUID + boost::filesystem::path::preferred_separator + p.filename().c_str();
+            // add .dcm only if not already present
+            if (p_out.extension() != ".dcm") {
+              p_out += ".dcm";
+            }
             if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
               // create the output directory
               create_directories(p_out.parent_path());
@@ -2291,7 +2498,11 @@ int main(int argc, char *argv[]) {
           // we should have a folder for each image series
           boost::filesystem::path p(fileNames[sliceNr]);
           boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "labels" + boost::filesystem::path::preferred_separator +
-                                          newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + p.filename().c_str() + ".dcm";
+                                          newSeriesInstanceUID.c_str() + boost::filesystem::path::preferred_separator + p.filename().c_str();
+          if (p_out.extension() != ".dcm") {
+            p_out += ".dcm";
+          }
+
           if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
             // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
             create_directories(p_out.parent_path());
@@ -2373,7 +2584,10 @@ int main(int argc, char *argv[]) {
         if (biomarker) {
           // overwrite some report values
           boost::filesystem::path p_out = output + boost::filesystem::path::preferred_separator + "reports" + boost::filesystem::path::preferred_separator +
-                                          newSeriesInstanceUID.c_str() + ".dcm";
+                                          newSeriesInstanceUID.c_str();
+          if (p_out.extension() != ".dcm") {
+            p_out += ".dcm";
+          }
           if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
             // fprintf(stderr, "create directory with name: \"%s\" for newSeriesInstanceUID: \"%s\"\n", p_out.c_str(), newSeriesInstanceUID.c_str());
             create_directories(p_out.parent_path());
