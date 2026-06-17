@@ -1263,6 +1263,11 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
       // coordinates are in pixel, we need coordinates based on the bounding box
       int x = storage[storageIdx].coords[j];
       int y = storage[storageIdx].coords[j + 1];
+
+      // the masks in the slice direction appear to be shifted by a voxel, correct this here
+      x -= 1;
+      y -= 1;
+
       // limit the coordinates in pixel to the bounding box
       if (x < 0)
         x = 0;
