@@ -125,6 +125,13 @@ struct Polygon {
   std::string ContributionDateTime; // 0018,a002 (when the PR object was list updated)
 };
 
+// Keep information for each SOPInstanceUID on what it referrs to (series, orientation, position)
+struct SOPInstanceUIDInformation {
+  std::string SeriesInstanceUID;
+  std::vector<double> ImageOrientationPatient;
+  std::vector<double> ImagePositionPatient;
+};
+
 using ImageType2D = itk::Image<PixelType, 2>;
 
 void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filename, std::string p_out, std::string uidFixedFlag,
@@ -700,9 +707,93 @@ void keepOnlyLast(std::vector<Polygon> *storage) {
 bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
 void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
-bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map<std::string, std::string> *SOPInstanceUID2SeriesInstanceUID, bool verbose) {
+bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map<std::string, SOPInstanceUIDInformation> *SOPInstanceUID2SeriesInstanceUID, bool verbose) {
   // read from input and create polygon structs in storage
   // a local cache of the Series that might be referenced
+
+  // First collect all information from real images (ignore PR and RTSTRUCT). fill in the information into the SOPInstanceUID2SeriesInstanceUID map.
+  for (boost::filesystem::recursive_directory_iterator end, dir(input); dir != end; ++dir) {
+    // std::cout << *dir << "\n";  // full path
+    // std::cout << dir->path().filename() << "\n"; // just last bit
+    std::string filename = dir->path().string();
+    // this could be a folder ... don't try to read folders as files
+    if (boost::filesystem::is_directory(dir->path())) {
+      continue; // ignore
+    }
+
+    // filter out some files that we expect but that are not DICOM
+    boost::filesystem::path p(filename);
+    if (p.extension() == ".json") {
+      continue; // ignore this file
+    }
+
+    // Instantiate the reader:
+    gdcm::Reader reader;
+    reader.SetFileName(filename.c_str());
+    if (!reader.Read()) {
+      if (verbose) {
+        std::cerr << "Could not read  \"" << filename << "\" as DICOM, ignore." << std::endl;
+      }
+      continue;
+    }
+
+    // The output of gdcm::Reader is a gdcm::File
+    gdcm::File &file = reader.GetFile();
+
+    // the dataset is the the set of element we are interested in:
+    gdcm::DataSet &ds = file.GetDataSet();
+
+    std::string SeriesInstanceUID;
+    std::string SOPInstanceUID;
+
+    gdcm::Attribute<0x0008, 0x0060> modalityAttr;
+    if (ds.FindDataElement( gdcm::Tag(0x0008, 0x0060)))
+      modalityAttr.Set(ds);
+
+    if (std::string(modalityAttr.GetValue()) != std::string("PR") && std::string(modalityAttr.GetValue()) != std::string("RTSTRUCT")) { // PR's and RTSTRUCT's might reference these
+      // we should create a cache here for the SeriesInstanceUID the ReferencedSOPInstanceUID might point to
+      gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
+      seriesinstanceuidAttr.Set(ds);
+      SeriesInstanceUID = seriesinstanceuidAttr.GetValue();
+      if (SeriesInstanceUID.back() == '\0')
+        SeriesInstanceUID.replace(SeriesInstanceUID.end() - 1, SeriesInstanceUID.end(), "");
+
+      gdcm::Attribute<0x0008, 0x0018> sopInstanceUIDAttr;
+      sopInstanceUIDAttr.Set(ds);
+      SOPInstanceUID = sopInstanceUIDAttr.GetValue();
+      if (SOPInstanceUID.back() == '\0')
+        SOPInstanceUID.replace(SOPInstanceUID.end() - 1, SOPInstanceUID.end(), "");
+
+      gdcm::Attribute<0x0020, 0x0032> imagePositionPatientAttr;
+      imagePositionPatientAttr.Set(ds);
+      double origin3D[3];
+      origin3D[0] = imagePositionPatientAttr.GetValue(0);
+      origin3D[1] = imagePositionPatientAttr.GetValue(1);
+      origin3D[2] = imagePositionPatientAttr.GetValue(2);
+
+      gdcm::Attribute<0x0020, 0x0037> imageOrientationPatientAttr;
+      imageOrientationPatientAttr.Set(ds);
+      double imageOrientationField[6];
+      imageOrientationField[0] = imageOrientationPatientAttr.GetValue(0);
+      imageOrientationField[1] = imageOrientationPatientAttr.GetValue(1);
+      imageOrientationField[2] = imageOrientationPatientAttr.GetValue(2);
+      imageOrientationField[3] = imageOrientationPatientAttr.GetValue(3);
+      imageOrientationField[4] = imageOrientationPatientAttr.GetValue(4);
+      imageOrientationField[5] = imageOrientationPatientAttr.GetValue(5);
+
+      SOPInstanceUIDInformation info;
+      info.SeriesInstanceUID = SeriesInstanceUID;
+      // add also the ImagePositionPatient
+      info.ImagePositionPatient = std::vector<double>{origin3D[0], origin3D[1], origin3D[2]};
+      // add also the ImageOrientationPatient
+      info.ImageOrientationPatient = std::vector<double>{imageOrientationField[0], imageOrientationField[1], imageOrientationField[2], imageOrientationField[3], imageOrientationField[4], imageOrientationField[5]};
+
+      // fprintf(stdout, " add to cache %s -> %s\n", SOPInstanceUID.c_str(), SeriesInstanceUID.c_str());
+      SOPInstanceUID2SeriesInstanceUID->insert(std::pair<std::string, SOPInstanceUIDInformation>(SOPInstanceUID, info));
+      continue;
+    }
+  }
+
 
   for (boost::filesystem::recursive_directory_iterator end, dir(input); dir != end; ++dir) {
     // std::cout << *dir << "\n";  // full path
@@ -761,22 +852,9 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     gdcm::Attribute<0x0008, 0x0060> modalityAttr;
     if (ds.FindDataElement( gdcm::Tag(0x0008, 0x0060)))
       modalityAttr.Set(ds);
+
     if (std::string(modalityAttr.GetValue()) != std::string("PR") && std::string(modalityAttr.GetValue()) != std::string("RTSTRUCT")) { // PR's and RTSTRUCT's might reference these
-      // we should create a cache here for the SeriesInstanceUID the ReferencedSOPInstanceUID might point to
-      gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
-      seriesinstanceuidAttr.Set(ds);
-      SeriesInstanceUID = seriesinstanceuidAttr.GetValue();
-      if (SeriesInstanceUID.back() == '\0')
-        SeriesInstanceUID.replace(SeriesInstanceUID.end() - 1, SeriesInstanceUID.end(), "");
-
-      gdcm::Attribute<0x0008, 0x0018> sopInstanceUIDAttr;
-      sopInstanceUIDAttr.Set(ds);
-      SOPInstanceUID = sopInstanceUIDAttr.GetValue();
-      if (SOPInstanceUID.back() == '\0')
-        SOPInstanceUID.replace(SOPInstanceUID.end() - 1, SOPInstanceUID.end(), "");
-
-      // fprintf(stdout, " add to cache %s -> %s\n", SOPInstanceUID.c_str(), SeriesInstanceUID.c_str());
-      SOPInstanceUID2SeriesInstanceUID->insert(std::pair<std::string, std::string>(SOPInstanceUID, SeriesInstanceUID));
+      // we handeled these already in our first loop, we just need to skip them here
       continue;
     }
 
@@ -1032,7 +1110,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
           fprintf(stdout, "\033[0;31mWarning\033[0m: no GraphicAnnotationSequence (0070,0001) in %s\n", filename.c_str());
       }
     } else if (std::string(modalityAttr.GetValue()) == std::string("RTSTRUCT")) {
-      // This is from a GammaPlan structured report
+      // This is from a GammaPlan structured report. Other RTSTRUCTS might be different.
       //(3006,0039) SQ (Sequence with explicit length #=1)      # 27266, 1 ROIContourSequence
       //  (fffe,e000) na (Item with explicit length #=3)          # 27258, 1 Item
       //    (3006,002a) IS [255\0\255]                              #  10, 3 ROIDisplayColor
@@ -1070,7 +1148,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
         // What do we do if we find more than one? We just use the first one, but we should warn about this.
         if (nitems > 1) {
           if (verbose) {
-            fprintf(stdout, " \033[0;31mWarning\033[0m: found more than one ROIContourSequence in %s, only the first one will be used\n", filename.c_str());
+            fprintf(stdout, " \033[0;31mWarning\033[0m: found more than one ROIContourSequence in \"%s\", only the first one will be used\n", filename.c_str());
           }
         }
         int usedROIContourSequenceItem = 1;
@@ -1112,10 +1190,10 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
               if (verbose)
                 fprintf(stdout, " %d does not have a contour image sequence\n", itemNr);
               continue;
-            } else {
-              if (verbose)
-                fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a ContourImageSequence\n", itemNr);
-            }
+            } //else {
+            //  if (verbose)
+            //    fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a ContourImageSequence\n", itemNr);
+            //}
 
             const gdcm::DataElement &de3 = subds2.GetDataElement(contourImageSequence);
             gdcm::SmartPointer<gdcm::SequenceOfItems> sqiReferencedImageSequence = de3.GetValueAsSQ();
@@ -1127,14 +1205,14 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
               gdcm::DataSet &subds3 = item3.GetNestedDataSet();
               if (!subds3.FindDataElement(referencedSOPInstanceUID)) {
                 if (verbose)
-                  fprintf(stdout, " %d no referencedSOPInstanceUID\n", itemNr2);
+                  fprintf(stdout, "\033[0;31mWarning\033[0m: %d no referencedSOPInstanceUID\n", itemNr2);
                 continue;
               }
               const gdcm::DataElement &deReferencedSOPInstanceUID = subds3.GetDataElement(referencedSOPInstanceUID);
               const gdcm::ByteValue *bv = deReferencedSOPInstanceUID.GetByteValue();
               std::string refUID(bv->GetPointer(), bv->GetLength());
-              if (verbose)
-                fprintf(stdout, " \033[0;32mfound\033[0m: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
+              //if (verbose)
+              //  fprintf(stdout, " \033[0;32mfound\033[0m: %s as ReferencedSOPInstanceUID\n", refUID.c_str());
               poly.ReferencedSOPInstanceUID = boost::algorithm::trim_copy(refUID);
               // the string above might contain a utf-8 version of a null character
               if (poly.ReferencedSOPInstanceUID.back() == '\0')
@@ -1143,34 +1221,65 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
             // ContourGeometricType (3006,0042) CS [CLOSED_PLANAR]                          #  14, 1 ContourGeometricType
             if (!subds2.FindDataElement(contourGeometricType)) {
               if (verbose)                
-                fprintf(stdout, " %d no contour geometric type\n", itemNr);
+                fprintf(stdout, "\033[0;31mWarning\033[0m: %d no contour geometric type\n", itemNr);
               continue;
             }
             const gdcm::DataElement &deContourGeometricType = subds2.GetDataElement(contourGeometricType);
             const gdcm::ByteValue *bv = deContourGeometricType.GetByteValue();
             std::string cGT(bv->GetPointer(), bv->GetLength());
-            if (verbose)              
-              fprintf(stdout, " \033[0;32mfound\033[0m: %s as ContourGeometricType\n", cGT.c_str());
+            //if (verbose)              
+            //  fprintf(stdout, " \033[0;32mfound\033[0m: %s as ContourGeometricType\n", cGT.c_str());
+
+            cGT = boost::algorithm::trim_copy(cGT);
+
+            // here we could have OPEN_PLANAR (does not make much sense) or CLOSED_XOR 
+            if (cGT != "CLOSED_PLANAR") {
+              if (verbose)
+                fprintf(stdout, "\033[0;31mWarning\033[0m: %d contour geometric type is not CLOSED_PLANAR, skipping\n", itemNr);
+              continue;
+            }
 
             // NumberOfContourPoints (3006,0046) IS [16]                                     #   2, 1 NumberOfContourPoints
             if (!subds2.FindDataElement(numberOfContourPoints)) {
-
               if (verbose)
-                fprintf(stdout, " %d no number of contour points\n", itemNr);
+                fprintf(stdout, "\033[0;31mWarning\033[0m: [item %d] no number of contour points\n", itemNr);
               continue;
             }
             const gdcm::DataElement &deNumberOfContourPoints = subds2.GetDataElement(numberOfContourPoints);
             const gdcm::ByteValue *bv2 = deNumberOfContourPoints.GetByteValue();
             std::string nCP(bv2->GetPointer(), bv2->GetLength());
             int numberOfPoints = std::stoi(nCP);
-            if (verbose)              
-              fprintf(stdout, " \033[0;32mfound\033[0m: %d as NumberOfContourPoints\n", numberOfPoints);
+            //if (verbose)              
+            //  fprintf(stdout, " \033[0;32mfound\033[0m: %d as NumberOfContourPoints\n", numberOfPoints);
 
             // ContourData (3006,0050) DS [-14.9715973\-0.611151123\-23.7536011\-14.7715973\-0.911151123\-23.... # 584,48 ContourData
             
+            // TODO: The points in ContourData are in 3D, we need to project them onto the plane defined by the image orientation and image position.
+            // (Even if the points are in physical coordinates we don't want to convert them to pixel coordinates as this would loose precision.)
+            // Information on the orientation and position of the current image are in SOPInstanceUID2SeriesInstanceUID. We can use the 
+            // ReferencedSOPInstanceUID to find the corresponding image and then get the orientation and position from there.
+            std::vector<double> imageOrigin(3, 0.0);
+            std::vector<double> orientation(6, 0.0);
+            bool found = false;
+            for (auto p = SOPInstanceUID2SeriesInstanceUID->begin(); p != SOPInstanceUID2SeriesInstanceUID->end(); ++p) {
+              if (p->first == poly.ReferencedSOPInstanceUID) {
+                SOPInstanceUIDInformation info = p->second;
+                std::string seriesInstanceUID = info.SeriesInstanceUID;
+                imageOrigin = info.ImagePositionPatient;
+                orientation = info.ImageOrientationPatient;
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              if (verbose)
+                fprintf(stdout, "\033[0;31mWarning\033[0m: [item %d] could not find image information for ReferencedSOPInstanceUID %s\n", itemNr, poly.ReferencedSOPInstanceUID.c_str());
+              continue;
+            }
+
             if (!subds2.FindDataElement(contourData)) {
               if (verbose)
-                fprintf(stdout, " %d no contour data\n", itemNr);
+                fprintf(stdout, "\033[0;31mWarning\033[0m: [item %d] no contour data\n", itemNr);
               continue;
             }
             const gdcm::DataElement &deContourData = subds2.GetDataElement(contourData);
@@ -1188,22 +1297,36 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
             // the coordinates are in 3D now, we only want the coordinates in the plane of the image, is it sufficient to just take the first two coordinates?
             // also the coordinates are floating point so not in pixel, should we convert them to pixel coordinates (as float) based on the image origin and spacing?
             poly.coords.resize(numberOfPoints*2); // we only take the first two coordinates of each point
+            double minsz, maxsz;
             for (unsigned int i = 0; i < numberOfPoints*3; i+=3) {
               poly.coords[i/3*2] = elwc.GetValue(i);
               poly.coords[i/3*2+1] = elwc.GetValue(i+1);
+              if (i == 0) {
+                minsz = elwc.GetValue(i+2);
+                maxsz = elwc.GetValue(i+2);
+              } else {
+                if (elwc.GetValue(i+2) < minsz)
+                  minsz = elwc.GetValue(i+2);
+                if (elwc.GetValue(i+2) > maxsz)
+                  maxsz = elwc.GetValue(i+2);
+              }
             }
             poly.extractedFrom = "RTSTRUCT";
 
-            poly.UnformattedTextValue = std::string("ContourGeometricType: " + cGT + ", NumberOfContourPoints: " + nCP);
+            if ((maxsz - minsz) > 1e-4) {
+              if (verbose)
+                fprintf(stdout, "\033[0;31mWarning\033[0m: [item %d] contour points are not in the same plane (x/y with constant z), this is not supported\n", itemNr);
+              continue;
+            }
+
+            poly.UnformattedTextValue = std::string("ContourGeometricType: " + cGT + ", NumberOfContourPoints: " + nCP + ", ReferencedSOPInstanceUID: " + poly.ReferencedSOPInstanceUID);
             // now store the poly
             storage->push_back(poly);
             if (verbose) {
               std::string utv = poly.UnformattedTextValue;
               stripUnicode(utv);
-              fprintf(stdout, " added poly with %lu points (\"%s\")\n", poly.coords.size(), utv.c_str());
+              fprintf(stdout, " [item %d] \033[0;32mfound\033[0m a poly with %lu points (\"%s\")\n", itemNr, poly.coords.size(), utv.c_str());
             }
-
-
           }
         } else {
           if (verbose)
@@ -1971,7 +2094,7 @@ int main(int argc, char *argv[]) {
   // lets call a function that will give us back the polygon information we need to process
   // the image data
   std::vector<Polygon> storage;
-  std::map<std::string, std::string> SOPInstanceUID2SeriesInstanceUID;
+  std::map<std::string, SOPInstanceUIDInformation> SOPInstanceUID2SeriesInstanceUID;
   // TODO: check if input points to a real location
   if (!itksys::SystemTools::FileIsDirectory(input.c_str())) {
     fprintf(stderr, "Error: could not find input directory: \"%s\"\n", input.c_str());
@@ -1992,7 +2115,7 @@ int main(int argc, char *argv[]) {
     bool found = false;
     for (auto pos = SOPInstanceUID2SeriesInstanceUID.begin(); pos != SOPInstanceUID2SeriesInstanceUID.end(); pos++) {
       if (pos->first == storage[i].ReferencedSOPInstanceUID) {
-        storage[i].ReferencedSeriesInstanceUID = pos->second;
+        storage[i].ReferencedSeriesInstanceUID = pos->second.SeriesInstanceUID;
         found = true;
         goodStorage++;
         break;
@@ -2026,6 +2149,7 @@ int main(int argc, char *argv[]) {
     entry["SeriesInstanceUID"] = storage[i].SeriesInstanceUID;
     entry["ReferencedSeriesInstanceUID"] = storage[i].ReferencedSeriesInstanceUID;
     entry["ContributionDateTime"] = storage[i].ContributionDateTime;
+    entry["CoordinatesFrom"] = storage[i].extractedFrom;
 
     std::string a = storage[i].UnformattedTextValue;
     stripUnicode(a);
@@ -2295,7 +2419,7 @@ int main(int argc, char *argv[]) {
               for (auto& [key, val] : resultJSON["POLYLINES"].items()) {
                 if (val["ReferencedSOPInstanceUID"].get<std::string>() == SOPInstanceUID) {
                   val["SliceLocation"] = SliceLocation;
-                  val["InstanceNumber"] = InstanceNumber;
+                  val["InstanceNumber"] = boost::algorithm::trim_copy(InstanceNumber);
                 }
               }
             }
