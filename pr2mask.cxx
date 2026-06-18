@@ -764,23 +764,26 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
       if (SOPInstanceUID.back() == '\0')
         SOPInstanceUID.replace(SOPInstanceUID.end() - 1, SOPInstanceUID.end(), "");
 
+      double origin3D[3] = {0, 0, 0};
       gdcm::Attribute<0x0020, 0x0032> imagePositionPatientAttr;
-      imagePositionPatientAttr.Set(ds);
-      double origin3D[3];
-      origin3D[0] = imagePositionPatientAttr.GetValue(0);
-      origin3D[1] = imagePositionPatientAttr.GetValue(1);
-      origin3D[2] = imagePositionPatientAttr.GetValue(2);
+      if (ds.FindDataElement( gdcm::Tag(0x0020, 0x0032))) { // not all images have this tag, but we need it for the cache
+        imagePositionPatientAttr.Set(ds);
+        origin3D[0] = imagePositionPatientAttr.GetValue(0);
+        origin3D[1] = imagePositionPatientAttr.GetValue(1);
+        origin3D[2] = imagePositionPatientAttr.GetValue(2);
+      }
 
+      double imageOrientationField[6] = {0, 0, 0, 0, 0, 0};
       gdcm::Attribute<0x0020, 0x0037> imageOrientationPatientAttr;
-      imageOrientationPatientAttr.Set(ds);
-      double imageOrientationField[6];
-      imageOrientationField[0] = imageOrientationPatientAttr.GetValue(0);
-      imageOrientationField[1] = imageOrientationPatientAttr.GetValue(1);
-      imageOrientationField[2] = imageOrientationPatientAttr.GetValue(2);
-      imageOrientationField[3] = imageOrientationPatientAttr.GetValue(3);
-      imageOrientationField[4] = imageOrientationPatientAttr.GetValue(4);
-      imageOrientationField[5] = imageOrientationPatientAttr.GetValue(5);
-
+      if (ds.FindDataElement( gdcm::Tag(0x0020, 0x0037))) { // not all images have this tag, but we need it for the cache
+        imageOrientationPatientAttr.Set(ds);
+        imageOrientationField[0] = imageOrientationPatientAttr.GetValue(0);
+        imageOrientationField[1] = imageOrientationPatientAttr.GetValue(1);
+        imageOrientationField[2] = imageOrientationPatientAttr.GetValue(2);
+        imageOrientationField[3] = imageOrientationPatientAttr.GetValue(3);
+        imageOrientationField[4] = imageOrientationPatientAttr.GetValue(4);
+        imageOrientationField[5] = imageOrientationPatientAttr.GetValue(5);
+      }
       SOPInstanceUIDInformation info;
       info.SeriesInstanceUID = SeriesInstanceUID;
       // add also the ImagePositionPatient
