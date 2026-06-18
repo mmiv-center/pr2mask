@@ -24,9 +24,9 @@ To support the creation of training data we provide a module for creating segmen
 
 If mask slices created by pr2mask are not done every single slice and the segmentation leaves gaps the program <i>MorphologicalContourInterpolation</i> can fill in these gaps and create a volumetric segmentation mask. The module works on the mask DICOM files created by pr2mask and returns a new DICOM mask series where missing slices are filled in. With an option 'FineTuning' these masks can be adjusted to add more detail based on image contrast. This reduces manual segmentation time as a) not all slices need to be manually segmented and b) the polygon segmentations do not need to be that detailed.
 
-#### Presentation state objects to mask volumes
+#### Presentation state and RTSTRUCT objects to mask volumes
 
-On PACS systems polygonal traces can be stored as DICOM Presentation State objects. In order to get such an object back from the PACS it is not sufficient to 'export' the data from the user interface. Export functionality might not produce a Presentation State object DICOM file. Instead use findscu/movescu to get a copy of the native PACS data.
+On PACS systems polygonal traces can be stored as DICOM Presentation State or as RTSTRUCT objects. In order to get such an object back from the PACS it is not sufficient to 'export' the data from the user interface. Export functionality might not produce a Presentation State object DICOM file. Instead use findscu/movescu to get a copy of the native PACS data.
 
 The data expected by this tool should be a series of DICOM images with an associated Presentation State (PS) file. For example:
 
@@ -35,6 +35,15 @@ The data expected by this tool should be a series of DICOM images with an associ
 MR.1.3.6.1.4.1.45037.f20c2660a1d6c755111a70239b9c98e101fc1d6873170
 MR.1.3.6.1.4.1.45037.fe61dff73b8cbee31e79bee6283b55ab11eb62a51c929
 PSg.1.2.752.24.7.2440279901.62644.0.481844.0.1664872093
+```
+
+If you have a segmentation stored as a radiotherapy structure (RTSTRUCT) it looks similar:
+
+```bash
+...
+MR.1.3.6.1.4.1.45037.f20c2660a1d6c755111a70239b9c98e101fc1d6873170
+MR.1.3.6.1.4.1.45037.fe61dff73b8cbee31e79bee6283b55ab11eb62a51c929
+RTSS.dcm
 ```
 
 The pr2mask tool can be used to convert this list of files into a new output directory:
