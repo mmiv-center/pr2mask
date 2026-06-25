@@ -2617,13 +2617,31 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1050", std::to_string(0.5));
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0028|1051", std::to_string(1));
 
-          std::string v = std::string("pr2mask ") + versionString;
-          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0018|1020", v);
+          // software versions
+          std::string software_version = "";
+          // we don't want to use the software version from the original file
+          //itk::ExposeMetaData<std::string>(dictionary, "0018|1020", software_version);
+          //if (software_version.length() > 0) {
+          //  software_version += "\\";
+          //}
+          software_version += std::string("pr2mask ") + versionString;
+          if (uidFixedFlag.length() > 0) {
+            software_version += "\\" + std::string(uidFixedFlag);
+          }
+          // if we have a VERSION environment variable add that as well
+          const char* env_version = std::getenv("VERSION");
+          if (env_version) {
+            software_version += "\\" + std::string(env_version);
+          }
+
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0018|1020", software_version);
           // anon.Replace(gdcm::Tag(0x0018, 0x1020), v.c_str());
 
           // we should get the time and date only once and use it for all slices
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0023", DateOfSecondaryCapture.c_str());
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0033", TimeOfSecondaryCapture.c_str());
+
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0008", "DERIVED\\SECONDARY\\MASK");
 
           w->SetInput(im2change);
           // create the output filename
