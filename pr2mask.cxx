@@ -17,6 +17,8 @@
 #include "itkPolyLineParametricPath.h"
 #include "itkPolylineMask2DImageFilter.h"
 #include "itkPolylineMask2DScanlineImageFilter.h"
+#include "itkSpatialObjectToImageFilter.h"
+#include "itkPolygonSpatialObject.h"
 #include "itkRGBPixel.h"
 #include "itkScalarImageToHistogramGenerator.h"
 
@@ -1364,28 +1366,15 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
   for (int p = 0; p < polyIds.size(); p++) {
     lmask->FillBuffer(itk::NumericTraits<PixelType>::One);
 
-    using InputPolylineType = itk::PolyLineParametricPath<2>;
-    InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
-    using InputFilterType = itk::PolylineMask2DScanlineImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
-    InputFilterType::Pointer filter = InputFilterType::New();
-    // tolerance as 1/10 of a voxel, does this do something?
-    // double tol = std::min(im2change->GetSpacing()[2], std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1])) / 10.0;
-    double tol = std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1]) / 10.0;
-    filter->SetCoordinateTolerance(tol);
-    int storageIdx = polyIds[p]; // we just use the first one
-
-    using VertexType = InputPolylineType::VertexType;
-
-    // Add vertices to the polyline
-    double spacingx = lmask->GetSpacing()[0];
-    double spacingy = lmask->GetSpacing()[1];
-    double originx = lmask->GetOrigin()[0];
-    double originy = lmask->GetOrigin()[1];
+    using PolygonType = itk::PolygonSpatialObject<2>;
+    using PointType = PolygonType::SpatialObjectPointType;
     using PT = typename ImageType2D::PointType;
 
-    // With the current algorithm we get a mask that starts after the first index but ends at the last (asymmetric).
+    auto polygon = PolygonType::New();
+    std::vector<PointType> points;
+    int storageIdx = polyIds[p]; // we just use the first one
     for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
-      VertexType v0;
+      float v0[2];
       // coordinates are in pixel, we need coordinates based on the bounding box
       int x = storage[storageIdx].coords[j];
       int y = storage[storageIdx].coords[j + 1];
@@ -1416,23 +1405,121 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
         v0[0] = storage[storageIdx].coords[j];
         v0[1] = storage[storageIdx].coords[j+1];
       }
-      //v0[0] = (originx) + spacingx * (x);
-      //v0[1] = (originy) + spacingy * (y);
-      inputPolyline->AddVertex(v0);
+      PointType p1;
+      p1.SetPositionInObjectSpace(v0[0], v0[1]);
+      points.push_back(p1);
     }
+    polygon->SetPoints(points);
+    polygon->SetIsClosed(true);
+    polygon->Update();
 
-    // Connect the input image
-    filter->SetInput1(lmask);
+    using FilterType = itk::SpatialObjectToImageFilter<PolygonType, ImageType2D>;
+    auto filterSpatialObjectToImage = FilterType::New();
+    
+    filterSpatialObjectToImage->SetInput(polygon);
 
-    // Connect the Polyline
-    filter->SetInput2(inputPolyline);
+    // Define output image grid configuration
+    ImageType2D::SizeType size;
+    size[0] = mask->GetLargestPossibleRegion().GetSize()[0]; // width in pixels
+    size[1] = mask->GetLargestPossibleRegion().GetSize()[1]; // height in pixels
+    filterSpatialObjectToImage->SetSize(size);
+    
+    ImageType2D::SpacingType spacing;
+    spacing[0] = mask->GetSpacing()[0]; // 1 pixel = 1.0 mm
+    spacing[1] = mask->GetSpacing()[1];
+    filterSpatialObjectToImage->SetSpacing(spacing);
+    
+    ImageType2D::PointType origin;
+    origin.Fill(0.0); // Origin at (0,0) mm
+    origin = mask->GetOrigin();
+    filterSpatialObjectToImage->SetOrigin(origin);
+
+    filterSpatialObjectToImage->SetDirection(mask->GetDirection());
+
+    // Set pixel burn-in values
+    filterSpatialObjectToImage->SetInsideValue(1);  // Pixels inside
+    filterSpatialObjectToImage->SetOutsideValue(0);   // Pixels outside
+
     try {
-      filter->Update();
-    } catch (itk::ExceptionObject &err) {
+      filterSpatialObjectToImage->Update(); // Triggers the rasterization
+    } catch (const itk::ExceptionObject & err) {
       std::cerr << "ExceptionObject caught !" << std::endl;
       std::cerr << err << std::endl;
     }
-    ImageType2D::Pointer lres = filter->GetOutput();
+    // we have a mask now in the filter output
+    ImageType2D::Pointer lres = filterSpatialObjectToImage->GetOutput();
+
+    if (0) {
+      using InputPolylineType = itk::PolyLineParametricPath<2>;
+      InputPolylineType::Pointer inputPolyline = InputPolylineType::New();
+      using InputFilterType = itk::PolylineMask2DScanlineImageFilter<ImageType2D, InputPolylineType, ImageType2D>;
+      InputFilterType::Pointer filter = InputFilterType::New();
+      // tolerance as 1/10 of a voxel, does this do something?
+      // double tol = std::min(im2change->GetSpacing()[2], std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1])) / 10.0;
+      double tol = std::min(im2change->GetSpacing()[0], im2change->GetSpacing()[1]) / 10.0;
+      filter->SetCoordinateTolerance(tol);
+      //int storageIdx = polyIds[p]; // we just use the first one
+
+      using VertexType = InputPolylineType::VertexType;
+
+      // Add vertices to the polyline
+      double spacingx = lmask->GetSpacing()[0];
+      double spacingy = lmask->GetSpacing()[1];
+      double originx = lmask->GetOrigin()[0];
+      double originy = lmask->GetOrigin()[1];
+      using PT = typename ImageType2D::PointType;
+
+      // With the current algorithm we get a mask that starts after the first index but ends at the last (asymmetric).
+      for (int j = 0; j < storage[storageIdx].coords.size(); j += 2) {
+        VertexType v0;
+        // coordinates are in pixel, we need coordinates based on the bounding box
+        int x = storage[storageIdx].coords[j];
+        int y = storage[storageIdx].coords[j + 1];
+
+        // the masks in the slice direction appear to be shifted by a voxel, correct this here
+        x -= 1;
+        y -= 1;
+
+        // limit the coordinates in pixel to the bounding box
+        if (x < 0)
+          x = 0;
+        if (y < 0)
+          y = 0;
+        if (x > mask->GetLargestPossibleRegion().GetSize()[0] - 1)
+          x = mask->GetLargestPossibleRegion().GetSize()[0] - 1;
+        if (y > mask->GetLargestPossibleRegion().GetSize()[1] - 1)
+          y = mask->GetLargestPossibleRegion().GetSize()[1] - 1;
+
+        // center of the first pixel is at originx and originy
+        if (storage[storageIdx].extractedFrom == "PR") {
+          PT floatIndex;
+          ImageType2D::IndexType index = {x, y};
+          lmask->TransformIndexToPhysicalPoint(index, floatIndex);
+          v0[0] = floatIndex[0];
+          v0[1] = floatIndex[1];
+        } else {
+          // for RTSTRUCT the coordinates are in physical space, no conversion is needed
+          v0[0] = storage[storageIdx].coords[j];
+          v0[1] = storage[storageIdx].coords[j+1];
+        }
+        //v0[0] = (originx) + spacingx * (x);
+        //v0[1] = (originy) + spacingy * (y);
+        inputPolyline->AddVertex(v0);
+      }
+
+      // Connect the input image
+      filter->SetInput1(lmask);
+
+      // Connect the Polyline
+      filter->SetInput2(inputPolyline);
+      try {
+        filter->Update();
+      } catch (itk::ExceptionObject &err) {
+        std::cerr << "ExceptionObject caught !" << std::endl;
+        std::cerr << err << std::endl;
+      }
+      ImageType2D::Pointer lres = filter->GetOutput();
+    } // old code no longer used
 
     // now copy the filter output to mask (should be more complex in case of overlapping contours)
     ImageType2D::RegionType maskRegion = mask->GetLargestPossibleRegion();
