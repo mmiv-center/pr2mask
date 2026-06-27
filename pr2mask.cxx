@@ -57,6 +57,8 @@
 #include "itkRegionOfInterestImageFilter.h"
 #include "itkScalarImageToCooccurrenceMatrixFilter.h"
 
+#include "itkPasteImageFilter.h"
+
 #include "itkGDCMImageIO.h"
 
 #include "itkMetaDataDictionary.h"
@@ -250,7 +252,6 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   }
   for (unsigned int bin = 0; bin < histogramSize; bin++) {
     double f = histogram->GetFrequency(bin, 0) / total;
-    // fprintf(stdout, "bin %d, value is %f\n", bin, f);
     sum += f;
     if (t1 == -1 && sum > lowerT) {
       t1 = minGray + (maxGray - minGray) * (bin / (float)histogramSize);
@@ -260,11 +261,19 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
       break;
     }
   }
-  //if (verbose) {
-  //  fprintf(stdout, "CumSum threshold [%.2f, %.2f]\n", t1, t2);
-  //}
 
-  std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+  std::vector<std::vector<float>> labelColors = {
+    {0, 0, 0},       //  0: black (background)
+    {1, 0, 0},       //  1: red
+    {0, 1, 0},       //  2: green
+    {0, 0, 1},       //  3: blue
+    {1, 1, 0},       //  4: yellow
+    {1, 0, 1},       //  5: magenta
+    {0, 1, 1},       //  6: cyan
+    {1, 0.5f, 0},    //  7: orange
+    {0.5f, 0, 0.5f}, //  8: purple
+    {0.5f, 0.5f, 0}, //  9: olive
+  };
 
   // do this in two steps, first compute three label color channels, smooth them and alpha-blend last
   typedef float FPixelType;
@@ -302,9 +311,16 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   blueIterator.GoToBegin();
   while (!fusedLabelIterator.IsAtEnd() && !redIterator.IsAtEnd() && !greenIterator.IsAtEnd() && !blueIterator.IsAtEnd()) {
     // this will crash with many labels (more than in our const array)
-    redIterator.Set(labelColors[fusedLabelIterator.Get()][0]); // values are 0..1
-    greenIterator.Set(labelColors[fusedLabelIterator.Get()][1]);
-    blueIterator.Set(labelColors[fusedLabelIterator.Get()][2]);
+    int color_idx = fusedLabelIterator.Get();
+    if (color_idx < 0) // prevent negative values from generating wrong indices
+      color_idx = 1;
+    if (color_idx > labelColors.size()-1) {
+      color_idx -= labelColors.size() - 1;
+      color_idx = 1 + (color_idx % (labelColors.size()-1));
+    }
+    redIterator.Set(labelColors[color_idx][0]); // values are 0..1
+    greenIterator.Set(labelColors[color_idx][1]);
+    blueIterator.Set(labelColors[color_idx][2]);
     ++redIterator;
     ++greenIterator;
     ++blueIterator;
@@ -434,21 +450,28 @@ void writeSecondaryCapture(ImageType2D::Pointer maskFromPolys, std::string filen
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0032", imagePositionPatient);
   // perhaps we have to use the parsed values to write them again further down?
   double origin3D[3];
-  sscanf(imagePositionPatient.c_str(), "%lf\\%lf\\%lf", &(origin3D[0]), &(origin3D[1]), &(origin3D[2]));
+  if (sscanf(imagePositionPatient.c_str(), "%lf\\%lf\\%lf", &(origin3D[0]), &(origin3D[1]), &(origin3D[2])) != 3) {
+    origin3D[0] = origin3D[1] = origin3D[2] = 0;
+  }
   // fprintf(stdout, "image position patient field: %lf, %lf, %lf\n", origin3D[0], origin3D[1], origin3D[2]);
 
   std::string imageOrientation;
   itk::ExposeMetaData<std::string>(dictionarySlice, "0020|0037", imageOrientation);
   double imageOrientationField[6];
-  sscanf(imageOrientation.c_str(), "%lf\\%lf\\%lf\\%lf\\%lf\\%lf", &(imageOrientationField[0]), &(imageOrientationField[1]), &(imageOrientationField[2]),
-         &(imageOrientationField[3]), &(imageOrientationField[4]), &(imageOrientationField[5]));
+  if (sscanf(imageOrientation.c_str(), "%lf\\%lf\\%lf\\%lf\\%lf\\%lf", &(imageOrientationField[0]), &(imageOrientationField[1]), &(imageOrientationField[2]),
+         &(imageOrientationField[3]), &(imageOrientationField[4]), &(imageOrientationField[5])) != 6) {
+          imageOrientationField[0] = imageOrientationField[1] = imageOrientationField[2] = 0;
+          imageOrientationField[3] = imageOrientationField[4] = imageOrientationField[5] = 0;
+  }
   // fprintf(stdout, "image orientation field: %lf, %lf, %lf, %lf, %lf, %lf\n", imageOrientationField[0], imageOrientationField[1],
   //        imageOrientationField[2], imageOrientationField[3], imageOrientationField[4], imageOrientationField[5]);
 
   std::string sliceThicknessString;
   double sliceThickness = 0.0;
   itk::ExposeMetaData<std::string>(dictionarySlice, "0018|0050", sliceThicknessString);
-  sscanf(sliceThicknessString.c_str(), "%lf", &sliceThickness);
+  if (sscanf(sliceThicknessString.c_str(), "%lf", &sliceThickness) != 1) {
+    sliceThickness = 1.0f;
+  }
 
   std::string imageInstanceString;
   int imageInstance = 0;
@@ -757,7 +780,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
       gdcm::Attribute<0x0020, 0x000E> seriesinstanceuidAttr;
       seriesinstanceuidAttr.Set(ds);
       SeriesInstanceUID = seriesinstanceuidAttr.GetValue();
-      if (SeriesInstanceUID.back() == '\0')
+      if (SeriesInstanceUID.length() > 0 && SeriesInstanceUID.back() == '\0')
         SeriesInstanceUID.replace(SeriesInstanceUID.end() - 1, SeriesInstanceUID.end(), "");
 
       gdcm::Attribute<0x0008, 0x0018> sopInstanceUIDAttr;
@@ -1076,7 +1099,15 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
             // std::string nGP = gdcm::DirectoryHelper::GetStringValueFromTag(numberOfGraphicPoints, subds2);
             const gdcm::ByteValue *bv2 = deNumberOfGraphicPoints.GetByteValue();
             std::string nGP(bv2->GetPointer(), bv2->GetLength());
-            int numberOfPoints = *(nGP.c_str());
+            int numberOfPoints = 0;
+            if (nGP.length() > 0) {
+              try {
+                numberOfPoints = std::stoi(nGP);
+              } catch (const std::exception& e) {
+                std::cerr << "Invalid NumberOfContourPoints: " << nGP << std::endl;
+                continue;
+              } 
+            }
 
             if (!subds2.FindDataElement(graphicData)) {
               if (verbose)
@@ -1253,7 +1284,13 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
             const gdcm::DataElement &deNumberOfContourPoints = subds2.GetDataElement(numberOfContourPoints);
             const gdcm::ByteValue *bv2 = deNumberOfContourPoints.GetByteValue();
             std::string nCP(bv2->GetPointer(), bv2->GetLength());
-            int numberOfPoints = std::stoi(nCP);
+            int numberOfPoints = 0;
+            try { 
+              numberOfPoints = std::stoi(nCP);
+            } catch (const std::exception& e) {
+              std::cerr << "Invalid NumberOfContourPoints: " << nCP << std::endl;
+              continue;
+            } 
             //if (verbose)              
             //  fprintf(stdout, " \033[0;32mfound\033[0m: %d as NumberOfContourPoints\n", numberOfPoints);
 
@@ -2040,6 +2077,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
       }
 
       report->measures.push_back(*meas);
+      delete(meas);
     }
   }
 }
@@ -2256,6 +2294,7 @@ int main(int argc, char *argv[]) {
   typedef itk::GDCMImageIO ImageIOType;
   ImageIOType::Pointer dicomIO = ImageIOType::New();
   dicomIO->LoadPrivateTagsOn();
+  dicomIO->LoadSequencesOn();
 
   reader->SetImageIO(dicomIO);
 
@@ -2429,7 +2468,9 @@ int main(int argc, char *argv[]) {
 
             if (!itksys::SystemTools::FileIsDirectory(p_out.parent_path().c_str())) {
               // create the output directory
-              create_directories(p_out.parent_path());
+              if (!create_directories(p_out.parent_path())) {
+                std::cerr << "Could not create the output directory " << p_out.parent_path() << std::endl;
+              }
             }
             w->SetFileName(p_out.c_str());
             w->SetImageIO(dicomIO);
@@ -2534,32 +2575,37 @@ int main(int argc, char *argv[]) {
           ImageType2D::SizeType size = region.GetSize();
           // std::cout << "size is: " << size[0] << " " << size[1] << std::endl;
 
+          unsigned int bla = sizeof(ImageType2D::PixelType);
           ImageType2D::PixelContainer *container;
           container = im2change->GetPixelContainer();
           container->SetContainerManageMemory(false);
-          unsigned int bla = sizeof(ImageType2D::PixelType);
           ImageType2D::PixelType *buffer2 = container->GetBufferPointer();
-
-          ImageType2D::Pointer nImage;
-          if (polyIds.size() > 0) {
-            // nImage = filter->GetOutput();
-
-            // ImageType2D::Pointer nImage = filter->GetOutput();
-            ImageType2D::PixelContainer *container2;
-            container2 = maskFromPolys->GetPixelContainer();
-            ImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
-
-            // Here we copy all values over, that is 0, 1, 2, 3 but also additional labels
-            // that have been selected before (air in intestines for example).
-            memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
-            // We can clean the data (remove all other label).
-            /*for (int k = 0; k < size[0] * size[1]; k++) {
-              if (buffer2[k] > 3) {
-                buffer2[k] = 0; // set to background
-              }
-            }*/
+          if (1) {
+            ImageType2D::Pointer nImage;
+            if (polyIds.size() > 0) {
+              ImageType2D::PixelContainer *container2;
+              container2 = maskFromPolys->GetPixelContainer();
+              ImageType2D::PixelType *buffer3 = container2->GetBufferPointer();
+              memcpy(buffer2, &(buffer3[0]), size[0] * size[1] * bla);
+            }
           }
+          if (0) {
+            if (polyIds.size() > 0) {
+              using PasteFilterType = itk::PasteImageFilter<ImageType2D>;
+              auto pastefilter = PasteFilterType::New();
+              pastefilter->SetSourceImage(maskFromPolys);
+              pastefilter->SetDestinationImage(im2change);
 
+              ImageType2D::RegionType sourceRegion = maskFromPolys->GetLargestPossibleRegion();
+              ImageType2D::RegionType destRegion = im2change->GetLargestPossibleRegion();
+              ImageType2D::RegionType intersection = sourceRegion;
+              intersection.Crop(destRegion);
+
+              pastefilter->SetSourceRegion(intersection);            
+              pastefilter->SetDestinationIndex(intersection.GetIndex());
+              pastefilter->Update();
+            }
+          }
           // dilate and erode the im2change (mask) (would be better if we do this in 3D)
           ImageType2D::Pointer cleanMask = im2change;
           if (dilationErosionValue > 0) {
@@ -2666,11 +2712,28 @@ int main(int argc, char *argv[]) {
 
           // copy the values back to the im2change buffer
           // ImageType2D::Pointer cleanMask = cleanMask;
-          ImageType2D::PixelContainer *container3;
-          container3 = cleanMask->GetPixelContainer();
-          ImageType2D::PixelType *buffer4 = container3->GetBufferPointer();
-          memcpy(buffer2, &(buffer4[0]), size[0] * size[1] * bla);
+          if (1) {
+            ImageType2D::PixelContainer *container3;
+            container3 = cleanMask->GetPixelContainer();
+            ImageType2D::PixelType *buffer4 = container3->GetBufferPointer();
+            memcpy(buffer2, &(buffer4[0]), size[0] * size[1] * bla);
+          }
+          if (0) {
+            using PasteFilterType = itk::PasteImageFilter<ImageType2D>;
+            auto pastefilter2 = PasteFilterType::New();
+            pastefilter2->SetSourceImage(cleanMask);
+            pastefilter2->SetDestinationImage(im2change);
 
+            // Compute intersection correctly
+            ImageType2D::RegionType sourceRegion = cleanMask->GetLargestPossibleRegion();
+            ImageType2D::RegionType destRegion   = im2change->GetLargestPossibleRegion();
+            ImageType2D::RegionType intersection = sourceRegion;
+            intersection.Crop(destRegion);
+
+            pastefilter2->SetSourceRegion(intersection);
+            pastefilter2->SetDestinationIndex(intersection.GetIndex());
+            pastefilter2->Update();
+          }
           // now change something to make a new copy of that file
           int newSeriesNumber = 1000 + atoi(seriesNumber.c_str()) + 1;
           std::string newSOPInstanceUID = std::string("");
@@ -2729,6 +2792,17 @@ int main(int argc, char *argv[]) {
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0033", TimeOfSecondaryCapture.c_str());
 
           itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|0008", "DERIVED\\SECONDARY\\MASK");
+          //     gdcm::Attribute<0x0008, 0x2111> at1; // Derivative Description
+          itk::EncapsulateMetaData<std::string>(dictionarySlice, "0008|2111", "MASK");
+
+            // This does not work, 0008,9215 is not in the output DICOM, its silently ignored
+          //  itk::MetaDataDictionary groupDictionary;
+          //  itk::EncapsulateMetaData<std::string>(groupDictionary, "0008|0100", "113076");
+          //  itk::EncapsulateMetaData<std::string>(groupDictionary, "0008|0102", "DCM");
+          //  itk::EncapsulateMetaData<std::string>(groupDictionary, "0008|0104", "Segmentation");
+          //  std::vector<itk::MetaDataDictionary> derivationSequence;
+          //  derivationSequence.push_back(groupDictionary);
+          //  itk::EncapsulateMetaData<std::vector<itk::MetaDataDictionary>>(dictionarySlice, "0008|9215", derivationSequence);
 
           w->SetInput(im2change);
           // create the output filename
@@ -2813,7 +2887,9 @@ int main(int argc, char *argv[]) {
         
         int key_fact = 0;
         for (int i = 0; i < report->measures.size(); i++) {
-          key_fact += std::stof(report->measures[i].find("physical_size")->second);
+          auto it = report->measures[i].find("physical_size");
+          if (it != report->measures[i].end())
+            key_fact += std::stof(it->second);
         }
         report->key_fact = std::to_string(key_fact);
         report->key_unit = std::string("mm^3");
