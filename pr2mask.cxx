@@ -73,6 +73,7 @@
 #include <codecvt>
 #include <locale> // wstring_convert
 #include <map>
+#include <regex>
 
 #include "mytypes.h"
 #include "report.h"
@@ -728,7 +729,6 @@ void keepOnlyLast(std::vector<Polygon> *storage) {
   } 
 }
 
-
 bool invalidChar(char c) { return !isprint(static_cast<unsigned char>(c)); }
 void stripUnicode(std::string &str) { str.erase(remove_if(str.begin(), str.end(), invalidChar), str.end()); }
 
@@ -822,7 +822,7 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
     }
   }
 
-
+  // Now parse again to look for PR and RTSTRUCT files only (extract polygons)
   for (boost::filesystem::recursive_directory_iterator end, dir(input); dir != end; ++dir) {
     // std::cout << *dir << "\n";  // full path
     // std::cout << dir->path().filename() << "\n"; // just last bit
@@ -1104,9 +1104,10 @@ bool parseForPolygons(std::string input, std::vector<Polygon> *storage, std::map
               try {
                 numberOfPoints = std::stoi(nGP);
               } catch (const std::exception& e) {
-                std::cerr << "Invalid NumberOfContourPoints: " << nGP << std::endl;
-                continue;
-              } 
+                numberOfPoints = static_cast<int>(nGP[0]);
+                //std::cerr << "Invalid NumberOfContourPoints: " << nGP << std::endl;
+                //continue;
+              }
             }
 
             if (!subds2.FindDataElement(graphicData)) {
