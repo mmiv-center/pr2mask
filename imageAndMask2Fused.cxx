@@ -34,6 +34,7 @@
 #include "gdcmRescaler.h"
 #include "gdcmStringFilter.h"
 #include "gdcmUIDGenerator.h"
+#include "json.hpp"
 
 
 #include "itkRGBPixel.h"
@@ -50,6 +51,9 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+
+// used for reading environment variables for colors for mask elements
+using json = nlohmann::json;
 
 std::string versionString;
 
@@ -1459,6 +1463,10 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("Info", "info");
   command.AddOptionField("Info", "info", MetaCommand::STRING, false);
 
+  command.SetOption("Colors", "c", false, "Print the current colors used for mask elements (json formatted). Options are 'votemap' and 'labelcolors'. Set new colors with the environment variables IMAGEANDMASK2FUSED_LABELCOLORS and IMAGEANDMASK2FUSED_VOTEMAPCOLORS.");
+  command.SetOptionLongTag("Colors", "colors");
+  command.AddOptionField("Colors", "colors", MetaCommand::STRING, false);
+
   command.SetOption("Upsample", "s", false, "Upsample the output images by a factor (e.g. 2) in x and y direction");
   command.SetOptionLongTag("Upsample", "upsample");
   command.AddOptionField("Upsample", "upsample", MetaCommand::FLOAT, false);
@@ -1484,6 +1492,76 @@ int main(int argc, char *argv[]) {
 
   if (!command.Parse(argc, argv)) {
     return 1;
+  }
+
+  // read in the colors from an environment variable, if it is set, otherwise use the default colors
+  if (getenv("IMAGEANDMASK2FUSED_LABELCOLORS") != nullptr) {
+    std::string colorsEnv = getenv("IMAGEANDMASK2FUSED_LABELCOLORS");
+    try {
+      json colorsJSON = json::parse(colorsEnv);
+      if (colorsJSON.is_array()) {
+        labelColors2.clear();
+        for (const auto& color : colorsJSON) {
+          if (color.is_array() && color.size() == 3) {
+            std::vector<float> colVec = {color[0].get<float>(), color[1].get<float>(), color[2].get<float>()};
+            labelColors2.push_back(colVec);
+          } else {
+            std::cerr << "Invalid color format in IMAGEANDMASK2FUSED_LABELCOLORS environment variable. Unset variable and export again with --colors (labelcolors|votemap)" << std::endl;
+            exit(EXIT_FAILURE);
+          }
+        }
+      } else {
+        std::cerr << "IMAGEANDMASK2FUSED_LABELCOLORS environment variable is not a valid JSON array." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    } catch (const json::parse_error& e) {
+      std::cerr << "Error parsing IMAGEANDMASK2FUSED_LABELCOLORS environment variable: " << e.what() << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+  if (getenv("IMAGEANDMASK2FUSED_VOTEMAPCOLORS") != nullptr) {
+    std::string colorsEnv = getenv("IMAGEANDMASK2FUSED_VOTEMAPCOLORS");
+    try {
+      json colorsJSON = json::parse(colorsEnv);
+      if (colorsJSON.is_array()) {
+        labelColorsVotemap.clear();
+        for (const auto& color : colorsJSON) {
+          if (color.is_array() && color.size() == 3) {
+            std::vector<float> colVec = {color[0].get<float>(), color[1].get<float>(), color[2].get<float>()};
+            labelColorsVotemap.push_back(colVec);
+          } else {
+            std::cerr << "Invalid color format in IMAGEANDMASK2FUSED_VOTEMAPCOLORS environment variable. Unset variable and export again with --colors (labelcolors|votemap)" << std::endl;
+            exit(EXIT_FAILURE);
+          }
+        }
+      } else {
+        std::cerr << "IMAGEANDMASK2FUSED_VOTEMAPCOLORS environment variable is not a valid JSON array." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    } catch (const json::parse_error& e) {
+      std::cerr << "Error parsing IMAGEANDMASK2FUSED_VOTEMAPCOLORS environment variable: " << e.what() << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
+
+  if (command.GetOptionWasSet("Colors")) {
+    std::string colors = command.GetValueAsString("Colors", "colors");
+    if (colors == "votemap") {
+      // printVotemapColors();
+      json resultJSON { labelColorsVotemap };
+      std::cout << resultJSON[0].dump(-1) << std::endl;
+      exit(EXIT_SUCCESS);
+    } else if (colors == "labelcolors") {
+      // printLabelColors();
+      json resultJSON { labelColors2 };
+      std::cout << resultJSON[0].dump(-1) << std::endl;
+      exit(EXIT_SUCCESS);
+    } else {
+      std::cerr << "Unknown color option (votemap|labelcolors): " << colors << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    return EXIT_SUCCESS;
   }
 
   stableUIDs = "";
