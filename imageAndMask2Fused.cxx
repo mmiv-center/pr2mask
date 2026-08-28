@@ -1506,7 +1506,7 @@ int main(int argc, char *argv[]) {
             std::vector<float> colVec = {color[0].get<float>(), color[1].get<float>(), color[2].get<float>()};
             labelColors2.push_back(colVec);
           } else {
-            std::cerr << "Invalid color format in IMAGEANDMASK2FUSED_LABELCOLORS environment variable. Unset variable and export again with --colors (labelcolors|votemap)" << std::endl;
+            std::cerr << "Invalid color format in IMAGEANDMASK2FUSED_LABELCOLORS environment variable. Unset variable and export again with --colors labelcolors to see the format." << std::endl;
             exit(EXIT_FAILURE);
           }
         }
@@ -1544,7 +1544,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-
+  // print the current colors for both votemap and label colors
   if (command.GetOptionWasSet("Colors")) {
     std::string colors = command.GetValueAsString("Colors", "colors");
     if (colors == "votemap") {
