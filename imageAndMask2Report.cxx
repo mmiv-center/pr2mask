@@ -134,13 +134,14 @@ struct generateImageReturn
      std::vector<int> roi_order;
 };
 
+std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
+
 // generate a key image based on an input image mask and the ground truth image
 // This key image generator shall generate a mosaic of images, one for each lesion.
 generateImageReturn generateKeyImageMosaic(ImageType3D::Pointer image, LabelMapType *labelMap, std::vector<int> resolution, float lowerT, float upperT) {
   if (verbose) {
     fprintf(stdout, "Start generating a key image...\n");
   }
-  std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
 
   generateImageReturn returns; // store keyImage and the location and text that should be presented ontop of the image
 
@@ -725,7 +726,7 @@ generateImageReturn generateKeyImage(ImageType3D::Pointer image, LabelMapType *l
   if (verbose) {
     fprintf(stdout, "Start generating a key image...\n");
   }
-  std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
+  //std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
 
   generateImageReturn returns; // store keyImage and the location and text that should be presented ontop of the image
 
@@ -1300,7 +1301,7 @@ void writeSecondaryCapture(MaskImageType2D::Pointer maskFromPolys, std::string f
   }
 
   std::vector<std::vector<float>> labelColors = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-  std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
+  //std::vector<std::vector<float>> labelColors2 = {{0, 0, 0}, {166,206,227}, {31,120,180}, {178,223,138}, {51,160,44}, {251,154,153}, {227,26,28}, {253,191,111}, {255,127,0}, {202,178,214}, {106,61,154}, {255,255,153}, {177,89,40}};
 
   // do this in two steps, first compute three label color channels, smooth them and alpha-blend last
   typedef float FPixelType;
@@ -2552,6 +2553,10 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("ReportType", "reporttype");
   command.AddOptionField("ReportType", "value", MetaCommand::STRING, false);
 
+  command.SetOption("Colors", "c", false, "Print the current colors used for mask elements (json formatted). Option is 'labelcolors'. Set new colors with the environment variables IMAGEANDMASK2REPORT_LABELCOLORS.");
+  command.SetOptionLongTag("Colors", "colors");
+  command.AddOptionField("Colors", "colors", MetaCommand::STRING, false);
+
   command.SetOption("BrightnessContrastLL", "d", false, "Set threshold for brightness / contrast based on cummulative histogram lower limit (percentage dark pixel 0.01).");
   command.SetOptionLongTag("BrightnessContrastLL", "brightness-contrast-ll");
   command.AddOptionField("BrightnessContrastLL", "value", MetaCommand::FLOAT, false);
@@ -2595,6 +2600,47 @@ int main(int argc, char *argv[]) {
 
   if (!command.Parse(argc, argv)) {
     return 1;
+  }
+
+  // read in the colors from an environment variable, if it is set, otherwise use the default colors
+  if (getenv("IMAGEANDMASK2REPORT_LABELCOLORS") != nullptr) {
+    std::string colorsEnv = getenv("IMAGEANDMASK2REPORT_LABELCOLORS");
+    try {
+      json colorsJSON = json::parse(colorsEnv);
+      if (colorsJSON.is_array()) {
+        labelColors2.clear();
+        for (const auto& color : colorsJSON) {
+          if (color.is_array() && color.size() == 3) {
+            std::vector<float> colVec = {color[0].get<float>(), color[1].get<float>(), color[2].get<float>()};
+            labelColors2.push_back(colVec);
+          } else {
+            std::cerr << "Invalid color format in IMAGEANDMASK2REPORT_LABELCOLORS environment variable. Unset variable and export again with --colors labelcolors to see the format." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+        }
+      } else {
+        std::cerr << "IMAGEANDMASK2REPORT_LABELCOLORS environment variable is not a valid JSON array." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    } catch (const json::parse_error& e) {
+      std::cerr << "Error parsing IMAGEANDMASK2REPORT_LABELCOLORS environment variable: " << e.what() << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  // print the current colors for both votemap and label colors
+  if (command.GetOptionWasSet("Colors")) {
+    std::string colors = command.GetValueAsString("Colors", "colors");
+    if (colors == "labelcolors") {
+      // printLabelColors();
+      json resultJSON { labelColors2 };
+      std::cout << resultJSON[0].dump(-1) << std::endl;
+      exit(EXIT_SUCCESS);
+    } else {
+      std::cerr << "Unknown color option (labelcolors): " << colors << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    return EXIT_SUCCESS;
   }
 
   verbose = true; //print out everything
