@@ -52,6 +52,8 @@
 #include "itkScalarImageToCooccurrenceMatrixFilter.h"
 #include "itkScalarImageToRunLengthMatrixFilter.h"
 
+#include "itkLabelMapToBinaryImageFilter.h"
+
 #include "itkContinuousIndex.h"
 #include "itkLinearInterpolateImageFunction.h"
 
@@ -69,6 +71,7 @@
 #include <boost/uuid/name_generator_sha1.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/beast/core/detail/base64.hpp>
 
 #include <codecvt>
 #include <locale> // wstring_convert
@@ -2036,6 +2039,34 @@ std::string getCompressedMaskString(MaskImageType::Pointer mask) {
   return compressed.str();
 }
 
+std::string base64_encode_beast(const std::string& input) {
+    namespace b64 = boost::beast::detail::base64;
+    
+    // Allocate a destination string large enough to hold the encoded output
+    std::string output;
+    output.resize(b64::encoded_size(input.size()));
+    
+    // Perform the encoding
+    auto written = b64::encode(&output[0], input.data(), input.size());
+    
+    // Trim the output string to the exact bytes written
+    output.resize(written);
+    return output;
+}
+
+template <typename T>
+std::string get_readable_name() {
+    int status;
+    // Demangle the name token
+    char* demangled = abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, &status);
+    if (status == 0) {
+        std::string name(demangled);
+        free(demangled);
+        return name;
+    }
+    return typeid(T).name();
+}
+
 void computeBiomarkers(Report *report, std::string output_path, std::string imageSeries, std::string labelSeries, bool isMosaic) {
   if (verbose) 
     fprintf(stdout, "start computing biomarkers...\n");
@@ -2185,6 +2216,37 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
     }
 
     std::map<std::string, std::string> *meas = &(report->measures[n_idx]); // new std::map<std::string, std::string>();
+
+    {
+      // 
+      // Save mask to REDCap as well.
+      // Create a temporary label map with only this label object and compress and encode as a new meas tag.
+      auto tempLabelMap = LabelMapType::New();
+      tempLabelMap->CopyInformation(labelMap); // Match spacing, origin, direction
+      tempLabelMap->AddLabelObject(labelObject);
+      using LabelMapToBinaryFilterType = itk::LabelMapToBinaryImageFilter<LabelMapType, ImageType>;
+      auto binaryFilter = LabelMapToBinaryFilterType::New();
+
+      binaryFilter->SetInput(tempLabelMap);
+      binaryFilter->SetBackgroundValue(0);
+      binaryFilter->SetForegroundValue(1); // Converts the object's pixels to 1
+      binaryFilter->Update();
+
+      ImageType::Pointer binaryMask = binaryFilter->GetOutput();
+      // now compress and encode this binary mask
+      std::string compressedMask = getCompressedMaskString(binaryMask);
+      // use base64 encoding to store this in the report
+      std::string base64Mask = base64_encode_beast(compressedMask);
+      meas->insert(std::make_pair("mask_base64_gzip_compressed", base64Mask));
+
+      meas->insert(std::make_pair("mask_size_x", std::to_string(binaryMask->GetLargestPossibleRegion().GetSize()[0])));
+      meas->insert(std::make_pair("mask_size_y", std::to_string(binaryMask->GetLargestPossibleRegion().GetSize()[1])));
+      meas->insert(std::make_pair("mask_size_z", std::to_string(binaryMask->GetLargestPossibleRegion().GetSize()[2])));
+
+      meas->insert(std::make_pair("mask_datatype", get_readable_name<ImageType::PixelType>()));
+      meas->insert(std::make_pair("mask_memory_layout", "row-major")); // ITK uses row-major layout
+      meas->insert(std::make_pair("mask_label_info", "This mask represents the region corresponding to label " + std::to_string(labelObject->GetLabel()) + " in the original label map (label " + std::to_string(n_idx) + " of " + std::to_string(labelMap->GetNumberOfLabelObjects()) + ")."));
+    }
 
     buf.str("");
     buf << itk::NumericTraits<LabelMapType::LabelType>::PrintType(labelObject->GetLabel());
