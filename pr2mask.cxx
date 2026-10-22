@@ -1418,8 +1418,9 @@ ImageType2D::Pointer createMaskFromStorage(ImageType2D::Pointer im2change, std::
       int y = storage[storageIdx].coords[j + 1];
 
       // the masks in the slice direction appear to be shifted by a voxel, correct this here
-      x -= 1;
-      y -= 1;
+      // This seems to be fixed now in Sectra. Reverse this fix for now.
+      //x -= 1;
+      //y -= 1;
 
       // limit the coordinates in pixel to the bounding box
       if (x < 0)
