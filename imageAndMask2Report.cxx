@@ -2248,7 +2248,7 @@ void computeBiomarkers(Report *report, std::string output_path, std::string imag
       meas->insert(std::make_pair("mask_label_info", "This mask represents the region corresponding to label " + std::to_string(labelObject->GetLabel()) + " in the original label map (label " + std::to_string(n_idx+1) + " of " + std::to_string(labelMap->GetNumberOfLabelObjects()) + ")."));
 
       // add the version string for pr2mask as a reference here
-      meas->insert(std::make_pair("mask_version", versionString));
+      meas->insert(std::make_pair("model_version", versionString));
     }
 
     buf.str("");
